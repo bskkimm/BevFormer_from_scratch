@@ -24,15 +24,28 @@ bevformer/
 ├── scripts/        # sanity checks, benchmarks
 └── utils/          # shared helpers
 
+train.py, eval.py  # training / evaluation CLI entry points
 tests/              # unit tests for every phase
 docs/superpowers/   # design specs and implementation plans
 ```
 
-Phase 1 (current) implements the data pipeline: a pure-PyTorch nuScenes
-dataset that returns temporal queues of frames (multi-camera images, ego
-pose / can_bus deltas, current-frame 3D boxes) matching official BEVFormer's
-data contract. Later phases add the image backbone/neck, BEV encoder,
-detection head/losses, and training/evaluation engine.
+The implementation was built in five phases, each with its own design
+spec and implementation plan under `docs/superpowers/`:
+
+1. **Data pipeline** — a pure-PyTorch nuScenes dataset returning temporal
+   queues of frames (multi-camera images, ego pose / can_bus deltas,
+   current-frame 3D boxes), matching official BEVFormer's data contract.
+2. **Image backbone + FPN neck** — ResNet with deformable convolutions,
+   a 4-level feature pyramid, and the GridMask training augmentation.
+3. **BEV spatiotemporal encoder** — a pure-PyTorch multi-scale deformable
+   attention core, spatial cross-attention (image → BEV) and temporal
+   self-attention (BEV → BEV across frames, aligned by ego motion).
+4. **Detection head + losses** — an object-query decoder over the BEV
+   grid, Hungarian matching, and focal/L1 losses with auxiliary
+   decoder-layer supervision.
+5. **Training/evaluation engine** — full model assembly (including
+   BEVFormer's no-grad BEV history mechanism), a training loop, and
+   `train.py`/`eval.py` CLI entry points.
 
 ## Setup
 
@@ -46,8 +59,24 @@ pip install -e .
 Prepare nuScenes using its standard directory layout (`v1.0-trainval`
 metadata tables, `samples/CAM_*` images). This repository expects the
 dataset at `~/dataset/nuscenes` by default; pass a different `dataroot` to
-`BevFormerNuScenesDataset` to point elsewhere. Dataset files are not
-distributed with this repository.
+`BevFormerNuScenesDataset` (or `--dataroot` on the CLIs) to point
+elsewhere. Dataset files are not distributed with this repository.
+
+## Training and evaluation
+
+```bash
+python train.py --dataroot ~/dataset/nuscenes --epochs 24
+python eval.py --dataroot ~/dataset/nuscenes --checkpoint checkpoints/bevformer.pth
+```
+
+`eval.py` reports lightweight sanity metrics (greedy center-distance
+match rate, mean center error) — **not** the official nuScenes mAP/NDS
+protocol. Official evaluation requires `nuscenes-devkit`, a submission
+JSON, and the full validation split; that integration is intentionally
+deferred, since it's orthogonal to finishing the from-scratch model
+implementation and can be layered on top of
+`bevformer.engine.evaluator.decode_predictions` later without changing
+anything else.
 
 ## Testing
 
@@ -55,5 +84,5 @@ distributed with this repository.
 pytest tests/ -v
 ```
 
-Tests run against a small synthetic nuScenes-style fixture and do not
-require the real dataset download.
+Tests run against small synthetic fixtures and do not require network
+access or the real dataset download.
