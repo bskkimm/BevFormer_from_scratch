@@ -26,11 +26,9 @@ bevformer/
 
 train.py, eval.py  # training / evaluation CLI entry points
 tests/              # unit tests for every phase
-docs/superpowers/   # design specs and implementation plans
 ```
 
-The implementation was built in five phases, each with its own design
-spec and implementation plan under `docs/superpowers/`:
+The implementation was built in five phases:
 
 1. **Data pipeline** — a pure-PyTorch nuScenes dataset returning temporal
    queues of frames (multi-camera images, ego pose / can_bus deltas,
