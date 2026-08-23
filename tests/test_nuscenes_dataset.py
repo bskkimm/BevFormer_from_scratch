@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from bevformer.data.nuscenes_categories import CLASS_TO_ID
@@ -68,15 +69,16 @@ def test_can_bus_deltas_zero_when_no_prev_bev_and_nonzero_otherwise(tmp_path):
     can_bus = sample["can_bus"]
     assert can_bus.shape == (4, 18)
 
-    delta_translation = can_bus[:, 16]
-    delta_yaw = can_bus[:, 17]
+    delta_x = can_bus[:, 16]
+    delta_y = can_bus[:, 17]
 
-    assert delta_translation[0].item() == 0.0
-    assert delta_yaw[0].item() == 0.0
+    assert delta_x[0].item() == 0.0
+    assert delta_y[0].item() == 0.0
     # Ego moves +1.0m in x per sample, so real consecutive frames have a
-    # nonzero translation delta and zero yaw delta (no rotation in fixture).
+    # positive x delta and zero y delta (no lateral motion in fixture).
     for i in range(1, 4):
-        assert delta_translation[i].item() > 0.0
+        assert delta_x[i].item() == pytest.approx(1.0)
+        assert delta_y[i].item() == 0.0
 
 
 def test_gt_boxes_populated_only_for_current_frame(tmp_path):

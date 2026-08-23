@@ -213,17 +213,16 @@ class BevFormerNuScenesDataset(Dataset):
             can_bus[i, 3:7] = torch.tensor(frame["ego2global_rotation"], dtype=torch.float32)
             # Indices 7:16 (accel, rotation_rate, velocity) are zero-filled:
             # the CAN bus expansion tables are not part of the standard
-            # v1.0-trainval metadata this dataset reads.
+            # v1.0-trainval metadata this dataset reads. Indices 16:18 hold
+            # the raw x/y translation delta (ego-plane, meters) versus the
+            # previous queue frame, needed by the BEV encoder's temporal
+            # warp; yaw delta is not stored separately since it can be
+            # recomputed on demand from the absolute rotation quaternions
+            # at indices 3:7 of consecutive frames.
             if i > 0 and queue_tokens[i] != queue_tokens[i - 1]:
                 prev_translation = frames[i - 1]["ego2global_translation"]
                 delta_translation = frame["ego2global_translation"][:2] - prev_translation[:2]
-                can_bus[i, 16] = float(np.linalg.norm(delta_translation))
-
-                curr_rot = pose_to_matrix(frame["ego2global_rotation"], (0.0, 0.0, 0.0))[:3, :3]
-                prev_rot = pose_to_matrix(frames[i - 1]["ego2global_rotation"], (0.0, 0.0, 0.0))[:3, :3]
-                curr_yaw = yaw_from_rotation_matrix(curr_rot)
-                prev_yaw = yaw_from_rotation_matrix(prev_rot)
-                can_bus[i, 17] = curr_yaw - prev_yaw
+                can_bus[i, 16:18] = torch.from_numpy(delta_translation)
         return can_bus
 
     def __getitem__(self, idx: int) -> dict:
