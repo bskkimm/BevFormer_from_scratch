@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Datasets, checkpoints, logs, experiment outputs
+dataset/
+datasets/
+checkpoints/
+*.pth
+logs/
+outputs/
+mlruns/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
