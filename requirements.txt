@@ -3,4 +3,5 @@ torchvision
 numpy
 pillow
 scipy
+mlflow
 pytest
