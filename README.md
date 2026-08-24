@@ -25,8 +25,20 @@ bevformer/
 └── utils/          # shared helpers
 
 train.py, eval.py  # training / evaluation CLI entry points
+notebooks/          # literate architecture walkthrough
 tests/              # unit tests for every phase
 ```
+
+## Literate walkthrough
+
+`notebooks/bevformer_e2e_walkthrough.ipynb` rebuilds the entire architecture
+from scratch, cell by cell, **without importing the `bevformer` package** —
+each module is copied in verbatim from its source file and paired with a
+markdown explanation (mathematical definition + tensor-shape contract) and a
+runnable probe cell that exercises it on tiny synthetic inputs. It's a second,
+teaching-oriented construction of the same model this package implements, not
+a wrapper around it — useful for building intuition or checking that "the
+math" and "the code" agree.
 
 The implementation was built in five phases:
 
