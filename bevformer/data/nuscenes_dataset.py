@@ -239,6 +239,7 @@ class BevFormerNuScenesDataset(Dataset):
                     "sample_token": frame["sample_token"],
                     "scene_token": frame["scene_token"],
                     "lidar2img": frame["lidar2img"],
+                    "image_size": self.image_size,
                     "prev_bev_exists": prev_bev_exists,
                 }
             )

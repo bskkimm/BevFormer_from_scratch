@@ -101,3 +101,10 @@ def test_lidar2img_has_one_matrix_per_camera(tmp_path):
     for matrix in lidar2img:
         assert matrix.shape == (4, 4)
         assert np.isfinite(matrix).all()
+
+
+def test_img_metas_include_image_size(tmp_path):
+    dataset, info = _build_dataset(tmp_path, queue_length=4)
+    sample = dataset[0]
+    for meta in sample["img_metas"]:
+        assert meta["image_size"] == (8, 16)
