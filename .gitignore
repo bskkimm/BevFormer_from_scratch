@@ -23,6 +23,7 @@ checkpoints/
 logs/
 outputs/
 mlruns/
+mlflow.db
 *.log
 
 # Editors / OS
