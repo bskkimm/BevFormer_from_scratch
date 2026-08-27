@@ -1,5 +1,7 @@
 # BEVFormer in Pure PyTorch
 
+[![tests](https://github.com/bskkimm/BevFormer_from_scratch/actions/workflows/tests.yml/badge.svg)](https://github.com/bskkimm/BevFormer_from_scratch/actions/workflows/tests.yml)
+
 This repository reimplements BEVFormer from the official paper and reference
 implementation without MMDetection, MMDetection3D, or MMCV. Every component —
 image backbone, FPN neck, BEV spatiotemporal encoder (spatial cross-attention
@@ -87,6 +89,18 @@ deferred, since it's orthogonal to finishing the from-scratch model
 implementation and can be layered on top of
 `bevformer.engine.evaluator.decode_predictions` later without changing
 anything else.
+
+## Sanity check
+
+Before committing to a full training run, `bevformer/scripts/overfit_one_batch.py`
+verifies gradients flow correctly end to end by repeatedly training a tiny
+model on one fixed synthetic batch — a healthy implementation should drive
+the loss down substantially within a couple hundred steps, no dataset or GPU
+required:
+
+```bash
+python bevformer/scripts/overfit_one_batch.py --steps 200
+```
 
 ## Testing
 
