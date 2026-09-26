@@ -27,9 +27,9 @@ AMP_DTYPES = {"none": None, "fp16": torch.float16, "bf16": torch.bfloat16}
 
 
 def add_runtime_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
+    parser.add_argument("--amp", default="bf16", choices=sorted(AMP_DTYPES))
     parser.add_argument(
-        "--tf32", action=argparse.BooleanOptionalAction, default=False,
+        "--tf32", action=argparse.BooleanOptionalAction, default=True,
         help="run fp32 matmuls/convs (e.g. deformable conv, which autocast keeps in fp32) on TF32 tensor cores",
     )
     parser.add_argument(
@@ -51,13 +51,15 @@ def add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--image-height", type=int, default=900)
     parser.add_argument("--image-width", type=int, default=1600)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--num-workers", type=int, default=4)
+    # Throughput defaults below are the measured-best setup on a 32-CPU / RTX PRO 6000
+    # machine (see COMMAND_GUIDE.md "Training throughput").
+    parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument(
-        "--image-dtype", default="float32", choices=["float32", "uint8"],
+        "--image-dtype", default="uint8", choices=["float32", "uint8"],
         help="uint8 ships raw pixels and normalizes on the GPU (4x less host->device data)",
     )
-    parser.add_argument("--pin-memory", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--persistent-workers", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--pin-memory", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--persistent-workers", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--prefetch-factor", type=int, default=2, help="batches prefetched per worker")
 
 

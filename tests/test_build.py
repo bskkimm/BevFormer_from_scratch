@@ -38,7 +38,16 @@ def test_build_dataloader_single_process_ignores_worker_only_flags(tmp_path):
     ])
     loader = build_dataloader(args)  # torch rejects these two flags when num_workers == 0
     assert loader.num_workers == 0
-    assert next(iter(loader))["imgs"].dtype == torch.float32
+    assert next(iter(loader))["imgs"].dtype == torch.uint8  # the CLI default
+
+
+def test_data_and_runtime_defaults_are_the_measured_throughput_setup():
+    parser = argparse.ArgumentParser()
+    add_data_args(parser)
+    add_runtime_args(parser)
+    args = parser.parse_args([])
+    assert (args.image_dtype, args.num_workers, args.pin_memory, args.persistent_workers) == ("uint8", 8, True, True)
+    assert (args.amp, args.tf32, args.cudnn_benchmark) == ("bf16", True, False)
 
 
 def test_configure_runtime_sets_backend_flags():
