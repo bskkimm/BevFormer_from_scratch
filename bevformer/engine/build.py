@@ -36,6 +36,9 @@ def add_data_args(parser: argparse.ArgumentParser) -> None:
         "--image-dtype", default="float32", choices=["float32", "uint8"],
         help="uint8 ships raw pixels and normalizes on the GPU (4x less host->device data)",
     )
+    parser.add_argument("--pin-memory", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--persistent-workers", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--prefetch-factor", type=int, default=2, help="batches prefetched per worker")
 
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:
@@ -98,10 +101,15 @@ def build_dataloader(args: argparse.Namespace) -> DataLoader:
         pc_range=PC_RANGE,
         image_dtype=args.image_dtype,
     )
+    worker_kwargs = {}
+    if args.num_workers > 0:  # DataLoader rejects these options without worker processes
+        worker_kwargs = {"persistent_workers": args.persistent_workers, "prefetch_factor": args.prefetch_factor}
     return DataLoader(
         dataset,
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=args.num_workers,
+        pin_memory=args.pin_memory,
+        **worker_kwargs,
     )

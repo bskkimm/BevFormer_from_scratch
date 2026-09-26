@@ -21,6 +21,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--grad-clip-norm", type=float, default=35.0)
     parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
+    parser.add_argument(
+        "--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=False,
+        help="let cuDNN autotune conv algorithms (input sizes are fixed during training)",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--checkpoint-out", default="checkpoints/bevformer.pth")
     parser.add_argument("--mlflow", action="store_true")
@@ -44,6 +48,12 @@ def _mlflow_run_params(args: argparse.Namespace, dataset_size: int) -> dict[str,
         "lr": args.lr,
         "grad_clip_norm": args.grad_clip_norm,
         "amp": args.amp,
+        "cudnn_benchmark": args.cudnn_benchmark,
+        "num_workers": args.num_workers,
+        "pin_memory": args.pin_memory,
+        "persistent_workers": args.persistent_workers,
+        "prefetch_factor": args.prefetch_factor,
+        "image_dtype": args.image_dtype,
         "backbone_variant": args.backbone_variant,
         "dcn": args.dcn,
         "embed_dims": args.embed_dims,
@@ -99,6 +109,7 @@ def log_mlflow_artifact(mlflow_module, path: str) -> None:
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
     dataloader = build_dataloader(args)
     model = build_model(args).to(device)
