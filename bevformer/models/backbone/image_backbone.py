@@ -52,23 +52,78 @@ class DeformConv2dPack(nn.Module):
         return self.deform_conv(x, offset)
 
 
+class ModulatedDeformConv2dPack(nn.Module):
+    """DCNv2: learned offsets plus a learned per-tap modulation weight in (0, 1)."""
+
+    def __init__(self, conv: nn.Conv2d) -> None:
+        super().__init__()
+        kernel_h, kernel_w = conv.kernel_size
+        self.offset_channels = 2 * kernel_h * kernel_w
+        mask_channels = kernel_h * kernel_w
+        self.conv_offset = nn.Conv2d(
+            in_channels=conv.in_channels,
+            out_channels=self.offset_channels + mask_channels,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            dilation=conv.dilation,
+            bias=True,
+        )
+        self.deform_conv = DeformConv2d(
+            in_channels=conv.in_channels,
+            out_channels=conv.out_channels,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            dilation=conv.dilation,
+            groups=conv.groups,
+            bias=conv.bias is not None,
+        )
+        with torch.no_grad():
+            # Zero-init as in official DCNv2: offsets start at 0 and masks at
+            # sigmoid(0) = 0.5. The pretrained weight is doubled so that
+            # 0.5 * (2w) reproduces the original conv exactly at step 0 --
+            # otherwise ImageNet features would be halved, and frozen
+            # BatchNorm statistics (norm_eval) could not compensate.
+            self.deform_conv.weight.copy_(conv.weight * 2.0)
+            if conv.bias is not None and self.deform_conv.bias is not None:
+                self.deform_conv.bias.copy_(conv.bias)
+            nn.init.zeros_(self.conv_offset.weight)
+            nn.init.zeros_(self.conv_offset.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        offset_mask = self.conv_offset(x)
+        offset = offset_mask[:, : self.offset_channels]
+        mask = offset_mask[:, self.offset_channels :].sigmoid()
+        return self.deform_conv(x, offset, mask)
+
+
+_DCN_PACKS = {"v1": DeformConv2dPack, "v2": ModulatedDeformConv2dPack}
+
+
 class MultiViewImageBackbone(nn.Module):
     """Apply a torchvision ResNet backbone to all camera views.
 
     Input: images [B, N, 3, H, W]
     Output: dict[str, Tensor] with "stage3"/"stage4"/"stage5", each [B, N, C, H_l, W_l]
+
+    `dcn` selects the 3x3 conv used in stages 4-5: "v2" (modulated deformable
+    conv, as in official BEVFormer-Base), "v1" (offsets only), or "none".
     """
 
     def __init__(
         self,
-        variant: str = "resnet50",
+        variant: str = "resnet101",
         pretrained: bool = True,
         frozen_stages: int = 1,
         norm_eval: bool = True,
+        dcn: str = "v2",
     ) -> None:
         super().__init__()
         if variant not in _WEIGHTS:
             raise ValueError(f"Unsupported backbone variant: {variant}")
+        if dcn != "none" and dcn not in _DCN_PACKS:
+            raise ValueError(f"Unsupported dcn option: {dcn}")
         constructor, weights_enum = _WEIGHTS[variant]
         backbone = constructor(weights=weights_enum if pretrained else None)
 
@@ -77,18 +132,19 @@ class MultiViewImageBackbone(nn.Module):
         self.stage3 = backbone.layer2
         self.stage4 = backbone.layer3
         self.stage5 = backbone.layer4
-        self._convert_stage_to_deformable(self.stage4)
-        self._convert_stage_to_deformable(self.stage5)
+        if dcn != "none":
+            self._convert_stage_to_deformable(self.stage4, _DCN_PACKS[dcn])
+            self._convert_stage_to_deformable(self.stage5, _DCN_PACKS[dcn])
 
         self.frozen_stages = frozen_stages
         self.norm_eval = norm_eval
         self._freeze_stages()
 
     @staticmethod
-    def _convert_stage_to_deformable(stage: nn.Sequential) -> None:
+    def _convert_stage_to_deformable(stage: nn.Sequential, pack_type: type[nn.Module]) -> None:
         for block in stage:
             if hasattr(block, "conv2") and isinstance(block.conv2, nn.Conv2d):
-                block.conv2 = DeformConv2dPack(block.conv2)
+                block.conv2 = pack_type(block.conv2)
 
     def _freeze_stages(self) -> None:
         if self.frozen_stages >= 0:
