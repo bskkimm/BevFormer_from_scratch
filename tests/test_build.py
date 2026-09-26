@@ -56,9 +56,10 @@ def test_configure_runtime_sets_backend_flags():
     saved = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32, torch.backends.cudnn.benchmark)
     try:
         configure_runtime(parser.parse_args(["--tf32", "--cudnn-benchmark"]))
-        assert torch.backends.cuda.matmul.allow_tf32 and torch.backends.cudnn.allow_tf32
-        assert torch.backends.cudnn.benchmark
+        assert torch.backends.cuda.matmul.allow_tf32 and torch.backends.cudnn.benchmark
         configure_runtime(parser.parse_args(["--no-tf32"]))
         assert not torch.backends.cuda.matmul.allow_tf32 and not torch.backends.cudnn.benchmark
+        # --no-tf32 means stock PyTorch behavior, which keeps TF32 for cuDNN convolutions.
+        assert torch.backends.cudnn.allow_tf32 == saved[1]
     finally:
         torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32, torch.backends.cudnn.benchmark = saved

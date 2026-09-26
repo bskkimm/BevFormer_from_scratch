@@ -30,7 +30,8 @@ def add_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--amp", default="bf16", choices=sorted(AMP_DTYPES))
     parser.add_argument(
         "--tf32", action=argparse.BooleanOptionalAction, default=True,
-        help="run fp32 matmuls/convs (e.g. deformable conv, which autocast keeps in fp32) on TF32 tensor cores",
+        help="run fp32 matmuls (e.g. inside deformable conv, which autocast keeps in fp32) on TF32 tensor "
+        "cores; cuDNN convolutions already use TF32 by PyTorch default",
     )
     parser.add_argument(
         "--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=False,
@@ -40,7 +41,6 @@ def add_runtime_args(parser: argparse.ArgumentParser) -> None:
 
 def configure_runtime(args: argparse.Namespace) -> None:
     torch.backends.cuda.matmul.allow_tf32 = args.tf32
-    torch.backends.cudnn.allow_tf32 = args.tf32
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
 
