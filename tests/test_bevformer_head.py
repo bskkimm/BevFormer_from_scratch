@@ -55,3 +55,22 @@ def test_gradient_flows_to_parameters():
     for branch in list(head.cls_branches) + list(head.reg_branches):
         for param in branch.parameters():
             assert param.grad is not None
+
+
+def test_head_runs_in_float32_under_bf16_autocast():
+    torch.manual_seed(0)
+    head = _build_head(embed_dims=8, num_classes=3, num_decoder_layers=2)
+    hs = torch.randn(2, 1, 6, 8)
+    refs = torch.rand(2, 1, 6, 3)
+    query = torch.randn(1, 6, 8)
+    cls32, box32 = head(hs, refs)
+    ref32 = head.predict_reference_points(0, query)
+
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        cls_amp, box_amp = head(hs.bfloat16(), refs.bfloat16())
+        ref_amp = head.predict_reference_points(0, query.bfloat16())
+
+    assert cls_amp.dtype == box_amp.dtype == ref_amp.dtype == torch.float32
+    # Inputs were rounded to bf16, so allow bf16-input-rounding tolerance only.
+    torch.testing.assert_close(box_amp, box32, atol=0.1, rtol=0.02)
+    torch.testing.assert_close(ref_amp, ref32, atol=0.01, rtol=0.02)
