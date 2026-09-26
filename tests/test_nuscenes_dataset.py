@@ -120,3 +120,10 @@ def test_img_metas_include_image_size(tmp_path):
     sample = dataset[0]
     for meta in sample["img_metas"]:
         assert meta["image_size"] == (8, 16)
+
+
+def test_dataroot_expands_user_home(tmp_path, monkeypatch):
+    info = build_synthetic_nuscenes(tmp_path / "data")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    dataset = BevFormerNuScenesDataset("~/data", info["version"], queue_length=1, image_size=(8, 16))
+    assert len(dataset) == 7

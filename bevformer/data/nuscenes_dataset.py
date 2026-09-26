@@ -64,7 +64,7 @@ class BevFormerNuScenesDataset(Dataset):
         image_size: tuple[int, int] = DEFAULT_IMAGE_SIZE,
         pc_range: tuple[float, float, float, float, float, float] = DEFAULT_PC_RANGE,
     ) -> None:
-        self.dataroot = Path(dataroot)
+        self.dataroot = Path(dataroot).expanduser()
         self.meta_root = self.dataroot / version
         self.queue_length = queue_length
         self.image_size = image_size
