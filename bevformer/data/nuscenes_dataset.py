@@ -140,7 +140,10 @@ class BevFormerNuScenesDataset(Dataset):
         for cam in CAMERA_NAMES:
             sd = camera_records[cam]
             image = Image.open(self.dataroot / sd["filename"]).convert("RGB")
+            native_w, native_h = image.size
             imgs.append(resize_and_normalize_image(image, image_size=self.image_size))
+            # Intrinsics project into native pixels; rescale them to the resized image.
+            img_scale = np.diag([self.image_size[1] / native_w, self.image_size[0] / native_h, 1.0, 1.0])
 
             calib = self.calibrated_sensors[sd["calibrated_sensor_token"]]
             cam_ego_pose = self.ego_poses[sd["ego_pose_token"]]
@@ -150,7 +153,7 @@ class BevFormerNuScenesDataset(Dataset):
             cam2global = ego2global_cam @ cam2ego
             global2cam = invert_se3(cam2global)
             lidar2cam = global2cam @ ref_lidar2global
-            lidar2img.append(_viewpad(calib["camera_intrinsic"]) @ lidar2cam)
+            lidar2img.append((img_scale @ _viewpad(calib["camera_intrinsic"]) @ lidar2cam).astype(np.float32))
 
         boxes, labels = self._load_boxes(sample_token, ref_lidar2global)
 

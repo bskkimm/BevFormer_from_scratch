@@ -103,6 +103,18 @@ def test_lidar2img_has_one_matrix_per_camera(tmp_path):
         assert np.isfinite(matrix).all()
 
 
+def test_lidar2img_is_scaled_with_image_resize(tmp_path):
+    # Fixture images are natively 8x16 (HxW); resizing to 4x8 halves both axes,
+    # so the projection's pixel rows (x and y) must halve while depth is unchanged.
+    info = build_synthetic_nuscenes(tmp_path)
+    native = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=1, image_size=(8, 16))
+    resized = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=1, image_size=(4, 8))
+    for m_native, m_resized in zip(native[0]["img_metas"][0]["lidar2img"], resized[0]["img_metas"][0]["lidar2img"]):
+        np.testing.assert_allclose(m_resized[0], 0.5 * m_native[0], rtol=1e-6)
+        np.testing.assert_allclose(m_resized[1], 0.5 * m_native[1], rtol=1e-6)
+        np.testing.assert_allclose(m_resized[2:], m_native[2:], rtol=1e-6)
+
+
 def test_img_metas_include_image_size(tmp_path):
     dataset, info = _build_dataset(tmp_path, queue_length=4)
     sample = dataset[0]
