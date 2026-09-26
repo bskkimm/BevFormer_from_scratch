@@ -25,23 +25,23 @@ def warp_prev_bev(
         [B, bev_h*bev_w, C]: prev_bev resampled into the current ego frame.
     """
     batch, _, embed_dims = prev_bev.shape
-    feature_map = prev_bev.reshape(batch, bev_h, bev_w, embed_dims).permute(0, 3, 1, 2)  # [B, C, H, W]
+    device = prev_bev.device
+    feature_map = prev_bev.reshape(batch, bev_h, bev_w, embed_dims).permute(0, 3, 1, 2).float()  # [B, C, H, W]
 
     span_x = pc_range[3] - pc_range[0]
     span_y = pc_range[4] - pc_range[1]
-    tx = 2.0 * delta_translation_bev[:, 0] / span_x
-    ty = 2.0 * delta_translation_bev[:, 1] / span_y
+    tx = (2.0 * delta_translation_bev[:, 0].float() / span_x).view(batch, 1, 1)
+    ty = (2.0 * delta_translation_bev[:, 1].float() / span_y).view(batch, 1, 1)
+    cos = torch.cos(delta_yaw.float()).view(batch, 1, 1)
+    sin = torch.sin(delta_yaw.float()).view(batch, 1, 1)
 
-    cos = torch.cos(delta_yaw)
-    sin = torch.sin(delta_yaw)
-    theta = torch.zeros(batch, 2, 3, dtype=prev_bev.dtype, device=prev_bev.device)
-    theta[:, 0, 0] = cos
-    theta[:, 0, 1] = -sin
-    theta[:, 0, 2] = tx
-    theta[:, 1, 0] = sin
-    theta[:, 1, 1] = cos
-    theta[:, 1, 2] = ty
+    # The same grid F.affine_grid(theta, align_corners=False) builds for
+    # theta = [[cos, -sin, tx], [sin, cos, ty]], computed elementwise in float32:
+    # affine_grid is a matmul, which autocast would run in bf16.
+    xs = (2.0 * torch.arange(bev_w, device=device, dtype=torch.float32) + 1.0) / bev_w - 1.0
+    ys = (2.0 * torch.arange(bev_h, device=device, dtype=torch.float32) + 1.0) / bev_h - 1.0
+    y, x = torch.meshgrid(ys, xs, indexing="ij")  # [H, W] output-pixel centers in [-1, 1]
+    grid = torch.stack([cos * x - sin * y + tx, sin * x + cos * y + ty], dim=-1)  # [B, H, W, 2]
 
-    grid = F.affine_grid(theta, feature_map.shape, align_corners=False)
     warped = F.grid_sample(feature_map, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
-    return warped.permute(0, 2, 3, 1).reshape(batch, bev_h * bev_w, embed_dims)
+    return warped.permute(0, 2, 3, 1).reshape(batch, bev_h * bev_w, embed_dims).to(prev_bev.dtype)

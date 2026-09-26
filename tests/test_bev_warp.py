@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from bevformer.models.transformer.bev_warp import warp_prev_bev
@@ -47,3 +48,23 @@ def test_output_shape_matches_input():
 
     warped = warp_prev_bev(prev_bev, bev_h, bev_w, delta_translation, delta_yaw, PC_RANGE)
     assert warped.shape == prev_bev.shape
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="autocast/TF32 matmul precision is a CUDA concern")
+def test_warp_is_float32_exact_under_autocast_and_tf32():
+    torch.manual_seed(0)
+    prev_bev = torch.randn(2, 50 * 50, 8, device="cuda")
+    delta_translation = torch.tensor([[3.7, -1.2], [0.4, 2.9]], device="cuda")
+    delta_yaw = torch.tensor([0.05, -0.12], device="cuda")
+    exact = warp_prev_bev(prev_bev, 50, 50, delta_translation, delta_yaw, (-51.2, -51.2, -5.0, 51.2, 51.2, 3.0))
+
+    saved = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = True
+    try:
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            amp = warp_prev_bev(prev_bev, 50, 50, delta_translation, delta_yaw, (-51.2, -51.2, -5.0, 51.2, 51.2, 3.0))
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = saved
+
+    assert amp.dtype == torch.float32
+    torch.testing.assert_close(amp, exact, atol=1e-5, rtol=1e-5)

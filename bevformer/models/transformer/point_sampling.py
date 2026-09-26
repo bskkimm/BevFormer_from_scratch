@@ -43,7 +43,10 @@ def project_pillar_points_to_cameras(
         )  # [num_cam, 4, 4]
         image_h, image_w = meta["image_size"]
 
-        proj = torch.einsum("cij,pj->cpi", lidar2img, points_flat)  # [num_cam, D*Q, 4]
+        # Elementwise multiply-sum rather than einsum/matmul: matmuls are cast to
+        # bf16 under autocast and to TF32 when enabled, which would shift projected
+        # pixels by several px (lidar2img entries are ~1e3) and flip validity masks.
+        proj = (lidar2img[:, None, :, :] * points_flat[None, :, None, :]).sum(dim=-1)  # [num_cam, D*Q, 4]
         depth = proj[..., 2]
         xy = proj[..., :2] / depth.clamp(min=1e-5).unsqueeze(-1)
         norm_x = xy[..., 0] / image_w

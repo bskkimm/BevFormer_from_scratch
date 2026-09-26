@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from bevformer.models.transformer.point_sampling import project_pillar_points_to_cameras
@@ -52,3 +53,30 @@ def test_batch_dimension_matches_number_of_img_metas():
     ref_cam, mask = project_pillar_points_to_cameras(ref_points, PC_RANGE, img_metas)
     assert ref_cam.shape[1] == 3
     assert mask.shape[1] == 3
+
+
+def _real_camera_lidar2img():
+    # Magnitudes like a nuScenes camera: focal ~1266 px, principal point ~(816, 491).
+    intrinsic = np.array([[1266.4, 0.0, 816.3, 0.0], [0.0, 1266.4, 491.5, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
+    lidar2cam = np.array([[0.0, -1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.3], [1.0, 0.0, 0.0, -0.4], [0.0, 0.0, 0.0, 1.0]])
+    return (intrinsic @ lidar2cam).astype(np.float32)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="autocast/TF32 matmul precision is a CUDA concern")
+def test_projection_stays_float32_exact_under_autocast_and_tf32():
+    pc_range = (-51.2, -51.2, -5.0, 51.2, 51.2, 3.0)
+    ref_points = get_pillar_reference_points_3d(bev_h=20, bev_w=20, pc_range=pc_range, num_points_in_pillar=4).cuda()
+    img_metas = [{"lidar2img": [_real_camera_lidar2img()], "image_size": (900, 1600)}]
+    exact_cam, exact_mask = project_pillar_points_to_cameras(ref_points, pc_range, img_metas)
+
+    saved = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = True
+    try:
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            amp_cam, amp_mask = project_pillar_points_to_cameras(ref_points, pc_range, img_metas)
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = saved
+
+    assert amp_cam.dtype == torch.float32
+    assert torch.equal(amp_mask, exact_mask)
+    torch.testing.assert_close(amp_cam, exact_cam, atol=1e-6, rtol=1e-6)
