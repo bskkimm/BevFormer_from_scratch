@@ -38,7 +38,7 @@ python train.py \
   --checkpoint-out checkpoints/bevformer.pth
 ```
 
-Add `--use-amp` for mixed precision on CUDA. The backbone defaults to
+Add `--amp bf16` (or `fp16`) for mixed precision on CUDA. The backbone defaults to
 ResNet-101 with DCNv2 in stages 4-5, as in official BEVFormer-Base; use
 `--backbone-variant resnet50` and/or `--dcn v1|none` for lighter variants.
 Model-size knobs (`--embed-dims`, `--bev-h`, `--bev-w`, `--num-queries`,

@@ -11,6 +11,8 @@ from bevformer.engine.build import PC_RANGE, add_data_args, add_model_args, buil
 from bevformer.engine.trainer import fit
 from bevformer.models.losses.bevformer_loss import BEVFormerLoss
 
+AMP_DTYPES = {"none": None, "fp16": torch.float16, "bf16": torch.bfloat16}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train BEVFormer.")
@@ -18,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=24)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--grad-clip-norm", type=float, default=35.0)
-    parser.add_argument("--use-amp", action="store_true")
+    parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--checkpoint-out", default="checkpoints/bevformer.pth")
     parser.add_argument("--mlflow", action="store_true")
@@ -41,7 +43,7 @@ def _mlflow_run_params(args: argparse.Namespace, dataset_size: int) -> dict[str,
         "epochs": args.epochs,
         "lr": args.lr,
         "grad_clip_norm": args.grad_clip_norm,
-        "use_amp": args.use_amp,
+        "amp": args.amp,
         "backbone_variant": args.backbone_variant,
         "dcn": args.dcn,
         "embed_dims": args.embed_dims,
@@ -117,7 +119,7 @@ def main() -> None:
             device,
             epochs=args.epochs,
             grad_clip_norm=args.grad_clip_norm,
-            use_amp=args.use_amp,
+            amp_dtype=AMP_DTYPES[args.amp],
             epoch_end_callback=epoch_end_callback,
         )
     except Exception:

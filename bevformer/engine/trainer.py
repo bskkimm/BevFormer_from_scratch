@@ -25,19 +25,20 @@ def train_one_epoch(
     optimizer,
     device: torch.device,
     grad_clip_norm: float | None = None,
-    use_amp: bool = False,
+    amp_dtype: torch.dtype | None = None,
     scaler: torch.amp.GradScaler | None = None,
 ) -> dict[str, float]:
+    """`amp_dtype` (torch.float16 / torch.bfloat16) enables CUDA autocast; None is fp32."""
     model.train()
     running: dict[str, float] = defaultdict(float)
-    amp_enabled = use_amp and device.type == "cuda"
+    amp_enabled = amp_dtype is not None and device.type == "cuda"
     num_batches = 0
 
     for batch in dataloader:
         batch = move_batch_to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
 
-        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
             outputs = model(batch["imgs"], batch["img_metas"], batch["can_bus"])
         loss_dict = criterion.loss_by_feat(
             outputs["cls_scores"], outputs["bbox_preds"], batch["gt_boxes_3d"], batch["gt_labels_3d"]
@@ -46,7 +47,7 @@ def train_one_epoch(
         if not torch.isfinite(loss):
             raise RuntimeError("Encountered non-finite loss during training.")
 
-        if amp_enabled and scaler is not None:
+        if scaler is not None and scaler.is_enabled():
             scaler.scale(loss).backward()
             if grad_clip_norm is not None:
                 scaler.unscale_(optimizer)
@@ -77,17 +78,18 @@ def fit(
     device: torch.device,
     epochs: int,
     grad_clip_norm: float | None = None,
-    use_amp: bool = False,
+    amp_dtype: torch.dtype | None = None,
     log_every_epoch: bool = True,
     start_epoch: int = 0,
     epoch_end_callback: Callable[[int, dict[str, float]], None] | None = None,
 ) -> list[dict[str, float]]:
     history: list[dict[str, float]] = []
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp and device.type == "cuda")
+    # Only fp16 needs loss scaling; bf16 has fp32's exponent range.
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_dtype == torch.float16 and device.type == "cuda")
 
     for epoch in range(start_epoch, start_epoch + epochs):
         metrics = train_one_epoch(
-            model, criterion, dataloader, optimizer, device, grad_clip_norm, use_amp, scaler
+            model, criterion, dataloader, optimizer, device, grad_clip_norm, amp_dtype, scaler
         )
         metrics["epoch"] = float(epoch + 1)
         history.append(metrics)

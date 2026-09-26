@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from bevformer.engine.trainer import fit, move_batch_to_device, train_one_epoch
@@ -95,3 +96,21 @@ def test_fit_runs_multiple_epochs():
     assert len(history) == 2
     for entry in history:
         assert np.isfinite(entry["loss"])
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="bf16 autocast path is exercised on CUDA")
+@pytest.mark.parametrize("amp_dtype", [torch.bfloat16, torch.float16])
+def test_train_one_epoch_mixed_precision_on_cuda(amp_dtype):
+    device = torch.device("cuda")
+    model = _build_model().to(device)
+    criterion = BEVFormerLoss(num_classes=3, pc_range=PC_RANGE, use_auxiliary_losses=False)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    batch = move_batch_to_device(_make_batch(1, 2, 2), device)
+
+    param_before = next(model.head.reg_branches[-1].parameters()).detach().clone()
+    # fp16's GradScaler starts at scale 2**16 and skips the first few overflowing
+    # steps while it backs off, so give it several steps before checking updates.
+    history = fit(model, criterion, [batch], optimizer, device, epochs=6, amp_dtype=amp_dtype, log_every_epoch=False)
+
+    assert np.isfinite(history[0]["loss"])
+    assert not torch.equal(param_before, next(model.head.reg_branches[-1].parameters()))
