@@ -25,7 +25,8 @@ NUM_CAMS = 6
 
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--backbone-variant", default="resnet50", choices=["resnet50", "resnet101"])
+    parser.add_argument("--backbone-variant", default="resnet101", choices=["resnet50", "resnet101"])
+    parser.add_argument("--dcn", default="v2", choices=["v2", "v1", "none"])
     parser.add_argument("--embed-dims", type=int, default=256)
     parser.add_argument("--bev-h", type=int, default=50)
     parser.add_argument("--bev-w", type=int, default=50)
@@ -38,7 +39,9 @@ def add_model_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_model(args: argparse.Namespace) -> BEVFormerModel:
-    backbone = MultiViewImageBackbone(variant=args.backbone_variant, pretrained=True, frozen_stages=1)
+    backbone = MultiViewImageBackbone(
+        variant=args.backbone_variant, pretrained=True, frozen_stages=1, dcn=args.dcn
+    )
     neck = ImageFPN(in_channels=(512, 1024, 2048), out_channels=args.embed_dims)
     encoder = BEVFormerEncoder(
         num_layers=args.num_encoder_layers,
@@ -126,6 +129,7 @@ def _mlflow_run_params(args: argparse.Namespace, dataset_size: int) -> dict[str,
         "grad_clip_norm": args.grad_clip_norm,
         "use_amp": args.use_amp,
         "backbone_variant": args.backbone_variant,
+        "dcn": args.dcn,
         "embed_dims": args.embed_dims,
         "bev_h": args.bev_h,
         "bev_w": args.bev_w,

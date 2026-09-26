@@ -38,8 +38,10 @@ python train.py \
   --checkpoint-out checkpoints/bevformer.pth
 ```
 
-Add `--use-amp` for mixed precision on CUDA. Model-size knobs
-(`--embed-dims`, `--bev-h`, `--bev-w`, `--num-queries`,
+Add `--use-amp` for mixed precision on CUDA. The backbone defaults to
+ResNet-101 with DCNv2 in stages 4-5, as in official BEVFormer-Base; use
+`--backbone-variant resnet50` and/or `--dcn v1|none` for lighter variants.
+Model-size knobs (`--embed-dims`, `--bev-h`, `--bev-w`, `--num-queries`,
 `--num-encoder-layers`, `--num-decoder-layers`, ...) default to the sizes in
 `train.py`'s `add_model_args`; pass matching values to `eval.py` when
 evaluating a checkpoint trained with non-default sizes.

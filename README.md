@@ -47,7 +47,7 @@ The implementation was built in five phases:
 1. **Data pipeline** — a pure-PyTorch nuScenes dataset returning temporal
    queues of frames (multi-camera images, ego pose / can_bus deltas,
    current-frame 3D boxes), matching official BEVFormer's data contract.
-2. **Image backbone + FPN neck** — ResNet with deformable convolutions,
+2. **Image backbone + FPN neck** — ResNet-101 with DCNv2 (modulated deformable convolutions),
    a 4-level feature pyramid, and the GridMask training augmentation.
 3. **BEV spatiotemporal encoder** — a pure-PyTorch multi-scale deformable
    attention core, spatial cross-attention (image → BEV) and temporal
