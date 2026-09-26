@@ -7,10 +7,16 @@ from typing import Any, Callable
 
 import torch
 
+from bevformer.data.transforms import normalize_images
+
 
 def move_batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
+    """Moves a collated batch to `device`; uint8 images are normalized after the transfer."""
+    imgs = batch["imgs"].to(device, non_blocking=True)
+    if imgs.dtype == torch.uint8:
+        imgs = normalize_images(imgs)
     return {
-        "imgs": batch["imgs"].to(device, non_blocking=True),
+        "imgs": imgs,
         "img_metas": batch["img_metas"],
         "can_bus": batch["can_bus"].to(device, non_blocking=True),
         "gt_boxes_3d": [boxes.to(device, non_blocking=True) for boxes in batch["gt_boxes_3d"]],

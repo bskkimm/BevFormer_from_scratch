@@ -1,8 +1,14 @@
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
-from bevformer.data.transforms import photometric_distort_bgr, resize_and_normalize_image
+from bevformer.data.transforms import (
+    normalize_images,
+    photometric_distort_bgr,
+    resize_and_normalize_image,
+    resize_image_uint8,
+)
 
 
 def _make_image(width=64, height=32, color=(120, 60, 200)):
@@ -42,3 +48,16 @@ def test_photometric_distort_bgr_changes_values():
     array = np.full((16, 16, 3), 128.0, dtype=np.float32)
     distorted = photometric_distort_bgr(array, seed=0)
     assert not np.allclose(distorted, array)
+
+
+def test_uint8_resize_then_normalize_matches_cpu_float_path():
+    image = _make_image(width=64, height=32, color=(10, 200, 90))
+    raw = resize_image_uint8(image, image_size=(16, 32))
+    assert raw.dtype == torch.uint8 and raw.shape == (3, 16, 32)
+    torch.testing.assert_close(normalize_images(raw), resize_and_normalize_image(image, image_size=(16, 32)))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="checks GPU normalization parity")
+def test_normalize_images_on_gpu_matches_cpu():
+    raw = torch.randint(0, 256, (2, 6, 3, 8, 16), dtype=torch.uint8)
+    torch.testing.assert_close(normalize_images(raw.cuda()).cpu(), normalize_images(raw))

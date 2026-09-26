@@ -4,6 +4,7 @@ import torch
 
 from bevformer.data.nuscenes_categories import CLASS_TO_ID
 from bevformer.data.nuscenes_dataset import BevFormerNuScenesDataset
+from bevformer.data.transforms import normalize_images
 from tests.fixtures.build_synthetic_nuscenes import build_synthetic_nuscenes
 
 
@@ -127,3 +128,14 @@ def test_dataroot_expands_user_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     dataset = BevFormerNuScenesDataset("~/data", info["version"], queue_length=1, image_size=(8, 16))
     assert len(dataset) == 7
+
+
+def test_uint8_images_normalize_to_float32_images(tmp_path):
+    info = build_synthetic_nuscenes(tmp_path)
+    as_float = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=2, image_size=(8, 16))
+    as_uint8 = BevFormerNuScenesDataset(
+        info["dataroot"], info["version"], queue_length=2, image_size=(8, 16), image_dtype="uint8"
+    )
+    raw = as_uint8[0]["imgs"]
+    assert raw.dtype == torch.uint8
+    torch.testing.assert_close(normalize_images(raw), as_float[0]["imgs"])

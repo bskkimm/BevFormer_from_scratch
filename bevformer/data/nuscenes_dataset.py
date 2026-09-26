@@ -21,7 +21,7 @@ from bevformer.data.nuscenes_geometry import (
     pose_to_matrix,
     yaw_from_rotation_matrix,
 )
-from bevformer.data.transforms import resize_and_normalize_image
+from bevformer.data.transforms import resize_and_normalize_image, resize_image_uint8
 
 CAMERA_NAMES = [
     "CAM_FRONT",
@@ -63,12 +63,19 @@ class BevFormerNuScenesDataset(Dataset):
         queue_length: int = DEFAULT_QUEUE_LENGTH,
         image_size: tuple[int, int] = DEFAULT_IMAGE_SIZE,
         pc_range: tuple[float, float, float, float, float, float] = DEFAULT_PC_RANGE,
+        image_dtype: str = "float32",
     ) -> None:
+        """`image_dtype="uint8"` returns raw pixels, to be normalized on the GPU with
+        `bevformer.data.transforms.normalize_images` (`move_batch_to_device` does this
+        automatically); "float32" returns ImageNet-normalized images."""
+        if image_dtype not in ("float32", "uint8"):
+            raise ValueError(f"Unsupported image_dtype: {image_dtype}")
         self.dataroot = Path(dataroot).expanduser()
         self.meta_root = self.dataroot / version
         self.queue_length = queue_length
         self.image_size = image_size
         self.pc_range = pc_range
+        self.image_dtype = image_dtype
 
         self.samples = _index_by(_load_table(self.meta_root, "sample"))
         self.scenes = _index_by(_load_table(self.meta_root, "scene"))
@@ -141,7 +148,8 @@ class BevFormerNuScenesDataset(Dataset):
             sd = camera_records[cam]
             image = Image.open(self.dataroot / sd["filename"]).convert("RGB")
             native_w, native_h = image.size
-            imgs.append(resize_and_normalize_image(image, image_size=self.image_size))
+            load_image = resize_image_uint8 if self.image_dtype == "uint8" else resize_and_normalize_image
+            imgs.append(load_image(image, image_size=self.image_size))
             # Intrinsics project into native pixels; rescale them to the resized image.
             img_scale = np.diag([self.image_size[1] / native_w, self.image_size[0] / native_h, 1.0, 1.0])
 

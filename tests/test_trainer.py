@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import torch
 
+from bevformer.data.transforms import normalize_images
 from bevformer.engine.trainer import fit, move_batch_to_device, train_one_epoch
 from bevformer.models.backbone.image_backbone import MultiViewImageBackbone
 from bevformer.models.bevformer import BEVFormerModel
@@ -114,3 +115,11 @@ def test_train_one_epoch_mixed_precision_on_cuda(amp_dtype):
 
     assert np.isfinite(history[0]["loss"])
     assert not torch.equal(param_before, next(model.head.reg_branches[-1].parameters()))
+
+
+def test_move_batch_to_device_normalizes_uint8_images():
+    batch = _make_batch(1, 2, 2)
+    batch["imgs"] = torch.randint(0, 256, batch["imgs"].shape, dtype=torch.uint8)
+    moved = move_batch_to_device(batch, torch.device("cpu"))
+    assert moved["imgs"].dtype == torch.float32
+    torch.testing.assert_close(moved["imgs"], normalize_images(batch["imgs"]))

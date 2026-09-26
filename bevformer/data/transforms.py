@@ -10,15 +10,25 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-def resize_and_normalize_image(
-    image: Image.Image, image_size: tuple[int, int] = (900, 1600)
-) -> torch.Tensor:
+def resize_image_uint8(image: Image.Image, image_size: tuple[int, int] = (900, 1600)) -> torch.Tensor:
+    """PIL RGB image -> uint8 [3, H, W] at `image_size` (H, W), not normalized."""
     height, width = image_size
     if image.size != (width, height):
         image = image.resize((width, height))
-    array = np.asarray(image, dtype=np.float32) / 255.0
-    array = (array - IMAGENET_MEAN) / IMAGENET_STD
-    return torch.from_numpy(array).permute(2, 0, 1).contiguous()
+    return torch.from_numpy(np.ascontiguousarray(np.asarray(image, dtype=np.uint8).transpose(2, 0, 1)))
+
+
+def normalize_images(images: torch.Tensor) -> torch.Tensor:
+    """uint8 [..., 3, H, W] -> float32 ImageNet-normalized, on whatever device `images` is on."""
+    mean = torch.as_tensor(IMAGENET_MEAN, device=images.device).view(3, 1, 1)
+    std = torch.as_tensor(IMAGENET_STD, device=images.device).view(3, 1, 1)
+    return (images.float() / 255.0 - mean) / std
+
+
+def resize_and_normalize_image(
+    image: Image.Image, image_size: tuple[int, int] = (900, 1600)
+) -> torch.Tensor:
+    return normalize_images(resize_image_uint8(image, image_size))
 
 
 def photometric_distort_bgr(

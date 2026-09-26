@@ -32,6 +32,10 @@ def add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--image-width", type=int, default=1600)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--image-dtype", default="float32", choices=["float32", "uint8"],
+        help="uint8 ships raw pixels and normalizes on the GPU (4x less host->device data)",
+    )
 
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:
@@ -92,6 +96,7 @@ def build_dataloader(args: argparse.Namespace) -> DataLoader:
         queue_length=args.queue_length,
         image_size=(args.image_height, args.image_width),
         pc_range=PC_RANGE,
+        image_dtype=args.image_dtype,
     )
     return DataLoader(
         dataset,
