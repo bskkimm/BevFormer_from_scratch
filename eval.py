@@ -11,20 +11,14 @@ import argparse
 
 import torch
 
+from bevformer.engine.build import add_data_args, add_model_args, build_dataloader, build_model
 from bevformer.engine.evaluator import decode_predictions, evaluate_predictions
 from bevformer.engine.trainer import move_batch_to_device
-from train import add_model_args, build_dataloader, build_model
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a BEVFormer checkpoint.")
-    parser.add_argument("--dataroot", default="~/dataset/nuscenes")
-    parser.add_argument("--version", default="v1.0-trainval")
-    parser.add_argument("--queue-length", type=int, default=4)
-    parser.add_argument("--image-height", type=int, default=900)
-    parser.add_argument("--image-width", type=int, default=1600)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--num-workers", type=int, default=4)
+    add_data_args(parser)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--score-threshold", type=float, default=0.3)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
