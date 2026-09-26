@@ -2,7 +2,7 @@ import argparse
 
 import torch
 
-from bevformer.engine.build import add_data_args, build_dataloader
+from bevformer.engine.build import add_data_args, add_runtime_args, build_dataloader, configure_runtime
 from tests.fixtures.build_synthetic_nuscenes import build_synthetic_nuscenes
 
 
@@ -39,3 +39,17 @@ def test_build_dataloader_single_process_ignores_worker_only_flags(tmp_path):
     loader = build_dataloader(args)  # torch rejects these two flags when num_workers == 0
     assert loader.num_workers == 0
     assert next(iter(loader))["imgs"].dtype == torch.float32
+
+
+def test_configure_runtime_sets_backend_flags():
+    parser = argparse.ArgumentParser()
+    add_runtime_args(parser)
+    saved = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32, torch.backends.cudnn.benchmark)
+    try:
+        configure_runtime(parser.parse_args(["--tf32", "--cudnn-benchmark"]))
+        assert torch.backends.cuda.matmul.allow_tf32 and torch.backends.cudnn.allow_tf32
+        assert torch.backends.cudnn.benchmark
+        configure_runtime(parser.parse_args(["--no-tf32"]))
+        assert not torch.backends.cuda.matmul.allow_tf32 and not torch.backends.cudnn.benchmark
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32, torch.backends.cudnn.benchmark = saved

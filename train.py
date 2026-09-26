@@ -7,11 +7,18 @@ import os
 
 import torch
 
-from bevformer.engine.build import PC_RANGE, add_data_args, add_model_args, build_dataloader, build_model
+from bevformer.engine.build import (
+    AMP_DTYPES,
+    PC_RANGE,
+    add_data_args,
+    add_model_args,
+    add_runtime_args,
+    build_dataloader,
+    build_model,
+    configure_runtime,
+)
 from bevformer.engine.trainer import fit
 from bevformer.models.losses.bevformer_loss import BEVFormerLoss
-
-AMP_DTYPES = {"none": None, "fp16": torch.float16, "bf16": torch.bfloat16}
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,11 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=24)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--grad-clip-norm", type=float, default=35.0)
-    parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
-    parser.add_argument(
-        "--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=False,
-        help="let cuDNN autotune conv algorithms (input sizes are fixed during training)",
-    )
+    add_runtime_args(parser)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--checkpoint-out", default="checkpoints/bevformer.pth")
     parser.add_argument("--mlflow", action="store_true")
@@ -48,6 +51,7 @@ def _mlflow_run_params(args: argparse.Namespace, dataset_size: int) -> dict[str,
         "lr": args.lr,
         "grad_clip_norm": args.grad_clip_norm,
         "amp": args.amp,
+        "tf32": args.tf32,
         "cudnn_benchmark": args.cudnn_benchmark,
         "num_workers": args.num_workers,
         "pin_memory": args.pin_memory,
@@ -109,7 +113,7 @@ def log_mlflow_artifact(mlflow_module, path: str) -> None:
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
-    torch.backends.cudnn.benchmark = args.cudnn_benchmark
+    configure_runtime(args)
 
     dataloader = build_dataloader(args)
     model = build_model(args).to(device)

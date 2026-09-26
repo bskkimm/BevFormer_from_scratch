@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 
+import torch
 from torch.utils.data import DataLoader
 
 from bevformer.data.collate import collate_fn
@@ -22,6 +23,25 @@ from bevformer.models.transformer.encoder import BEVFormerEncoder
 
 PC_RANGE = (-51.2, -51.2, -5.0, 51.2, 51.2, 3.0)
 NUM_CAMS = 6
+AMP_DTYPES = {"none": None, "fp16": torch.float16, "bf16": torch.bfloat16}
+
+
+def add_runtime_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
+    parser.add_argument(
+        "--tf32", action=argparse.BooleanOptionalAction, default=False,
+        help="run fp32 matmuls/convs (e.g. deformable conv, which autocast keeps in fp32) on TF32 tensor cores",
+    )
+    parser.add_argument(
+        "--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=False,
+        help="let cuDNN autotune conv algorithms (input sizes are fixed during training)",
+    )
+
+
+def configure_runtime(args: argparse.Namespace) -> None:
+    torch.backends.cuda.matmul.allow_tf32 = args.tf32
+    torch.backends.cudnn.allow_tf32 = args.tf32
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
 
 def add_data_args(parser: argparse.ArgumentParser) -> None:

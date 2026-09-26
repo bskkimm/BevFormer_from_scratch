@@ -24,11 +24,18 @@ import time
 
 import torch
 
-from bevformer.engine.build import PC_RANGE, add_data_args, add_model_args, build_dataloader, build_model
+from bevformer.engine.build import (
+    AMP_DTYPES,
+    PC_RANGE,
+    add_data_args,
+    add_model_args,
+    add_runtime_args,
+    build_dataloader,
+    build_model,
+    configure_runtime,
+)
 from bevformer.engine.trainer import train_one_epoch
 from bevformer.models.losses.bevformer_loss import BEVFormerLoss
-
-AMP_DTYPES = {"none": None, "fp16": torch.float16, "bf16": torch.bfloat16}
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,12 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=["loader", "step", "e2e"], required=True)
     parser.add_argument("--warmup", type=int, default=3, help="untimed batches/steps before measuring")
     parser.add_argument("--iters", type=int, default=20, help="timed batches/steps")
-    parser.add_argument("--amp", default="none", choices=sorted(AMP_DTYPES))
-    parser.add_argument("--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--json", action="store_true", help="print one machine-readable JSON line")
     add_data_args(parser)
     add_model_args(parser)
+    add_runtime_args(parser)
     return parser.parse_args()
 
 
@@ -117,7 +123,7 @@ def bench_e2e(args: argparse.Namespace, device: torch.device) -> dict[str, float
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
-    torch.backends.cudnn.benchmark = args.cudnn_benchmark
+    configure_runtime(args)
     if args.mode == "loader":
         result = bench_loader(args)
     elif args.mode == "step":
@@ -129,7 +135,7 @@ def main() -> None:
         key: getattr(args, key)
         for key in (
             "mode", "batch_size", "num_workers", "pin_memory", "persistent_workers", "prefetch_factor",
-            "image_dtype", "amp", "cudnn_benchmark", "image_height", "image_width", "queue_length",
+            "image_dtype", "amp", "tf32", "cudnn_benchmark", "image_height", "image_width", "queue_length",
             "backbone_variant", "dcn",
         )
     }
