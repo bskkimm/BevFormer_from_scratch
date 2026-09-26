@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from bevformer.models.transformer.reference_points import (
@@ -25,3 +26,14 @@ def test_denormalize_maps_midpoint_to_range_center():
     points = torch.tensor([[0.5, 0.5, 0.5]])
     denorm = denormalize_reference_points(points, PC_RANGE)
     torch.testing.assert_close(denorm[0], torch.tensor([0.0, 0.0, 0.0]))
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_inverse_sigmoid_is_finite_with_finite_gradient_in_low_precision(dtype):
+    # 1 - 1e-5 rounds to exactly 1.0 in bf16/fp16, so a naive clamp lets
+    # x = 1.0 through and x / (1 - x) becomes inf with a NaN gradient.
+    x = torch.tensor([0.0, 0.5, 1.0], dtype=dtype, requires_grad=True)
+    out = inverse_sigmoid(x)
+    out.sum().backward()
+    assert torch.isfinite(out).all()
+    assert torch.isfinite(x.grad).all()

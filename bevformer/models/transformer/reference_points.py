@@ -34,8 +34,11 @@ def get_pillar_reference_points_3d(
 
 
 def inverse_sigmoid(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
-    x = x.clamp(min=eps, max=1 - eps)
-    return torch.log(x / (1 - x))
+    # Computed in float32 with (1 - x) clamped separately: under bf16/fp16
+    # autocast, 1 - eps rounds to 1.0, so clamping x alone lets x = 1.0 through
+    # and x / (1 - x) overflows to inf with a NaN gradient.
+    x = x.float().clamp(min=0.0, max=1.0)
+    return torch.log(x.clamp(min=eps) / (1 - x).clamp(min=eps))
 
 
 def denormalize_reference_points(
