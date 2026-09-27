@@ -28,26 +28,44 @@ change to the model architecture, before spending time on a real training run.
 ## Training
 
 ```bash
-python train.py \
-  --dataroot ~/dataset/nuscenes \
-  --version v1.0-trainval \
-  --epochs 24 \
-  --batch-size 1 \
-  --lr 2e-4 \
-  --grad-clip-norm 35.0 \
-  --checkpoint-out checkpoints/bevformer.pth
+python train.py --mlflow --output-dir runs/bevformer-r101dcn-bev100
 ```
 
-Training uses the official nuScenes train split (700 scenes, 28,130 samples)
-by default; `--split all` adds the val scenes. The throughput-tuned defaults (bf16 autocast, TF32 matmuls, uint8 images, 8
-workers, pinned memory) are on without any flags — see "Training Throughput"
-below; `--amp none --no-tf32` gives plain fp32. The backbone defaults to
-ResNet-101 with DCNv2 in stages 4-5, as in official BEVFormer-Base; use
-`--backbone-variant resnet50` and/or `--dcn v1|none` for lighter variants.
-Model-size knobs (`--embed-dims`, `--bev-h`, `--bev-w`, `--num-queries`,
-`--num-encoder-layers`, `--num-decoder-layers`, ...) default to the sizes in
-`train.py`'s `add_model_args`; pass matching values to `eval.py` when
-evaluating a checkpoint trained with non-default sizes.
+Defaults follow official BEVFormer-Base except for a 100x100 BEV grid (Base:
+200x200, 2.2x slower here):
+
+| Setting | Default |
+|---|---|
+| Data | official train split (700 scenes, 28,130 samples); `--split all` adds val |
+| Model | ResNet-101 + DCNv2 (stages 4-5), FPN, 100x100 BEV, 6 encoder / 6 decoder layers, 900 queries |
+| Optimizer | AdamW lr 2e-4, weight decay 0.01, backbone lr x0.1, grad clip 35 |
+| Schedule | 24 epochs, cosine per epoch to 1e-3 x lr, linear warmup over 500 updates from 1/3 lr |
+| Batch | 1 sample x 8 accumulation steps = effective batch 8 (official: 8 GPUs x 1) |
+| Speed | bf16 + TF32, compiled backbone, fused AdamW, uint8 images, 8 workers |
+
+Use `--backbone-variant resnet50`, `--dcn v1|none`, `--bev-h/--bev-w`, or
+`--num-encoder-layers` for lighter variants, and pass the same model flags to
+`eval.py`.
+
+Outputs (`--output-dir`, default `runs/<timestamp>`):
+
+```text
+checkpoints/latest.pth      model + optimizer + resume state, rewritten each epoch
+checkpoints/epoch_XX.pth    weights after epoch XX (~230 MB each)
+bev_features/epoch_XX.png   BEV feature images, every --vis-every-epochs (default 2) + epoch 0
+final.pth                   weights after the last epoch
+config.json                 every CLI argument
+```
+
+Resume an interrupted run from its last completed epoch, in the same MLflow run:
+
+```bash
+python train.py --mlflow --output-dir runs/bevformer-r101dcn-bev100 \
+  --resume runs/bevformer-r101dcn-bev100/checkpoints/latest.pth
+```
+
+Smoke-test the whole pipeline first with `--subset 64 --epochs 2 --vis-every-epochs 1`
+(about 3 minutes).
 
 ## Training Throughput
 
@@ -75,6 +93,10 @@ default model (ResNet-101 + DCNv2, 1600x900, 4-frame queue, 6 cameras, batch 1):
 Previous defaults: fp32, float32 images, 4 workers, no pinned memory. A cold page
 cache (first epoch) measured the same: 0.516 s/step, loader 23.6 samples/s.
 
+Current default model (100x100 BEV, 6 encoder layers, compiled backbone,
+fused AdamW): **0.742 s/step, ~5.8 h per train-split epoch, ~5.8 days for 24
+epochs.** The table above was measured on the earlier 50x50 / 3-layer default.
+
 **Bottleneck: GPU-bound.** The loader delivers ~10x what the GPU consumes, so the
 end-to-end step is within 3% of the GPU-only step.
 
@@ -88,6 +110,7 @@ What each lever did (GPU step unless noted):
 | 8 workers, pinned, persistent | loader 20 samples/s; 16 workers adds ~15% loader headroom but nothing end to end |
 | cudnn.benchmark | no measurable change -- left off |
 | Batch size 2-8 | no gain (1.96-1.86 vs 2.00 samples/s at batch 1): one sample is already 24 full-size images; choose batch size for optimization, not speed |
+| torch.compile(backbone) + fused AdamW | 0.795 -> 0.742 s at 100x100 / 6 layers (compiled bf16 is as close to fp32 as eager bf16); channels_last was slower |
 | Pre-resized JPEG cache | not needed: at native 1600x900 there is no resize; at 800x450 the loader (21 samples/s) still outpaces even a ResNet-50/no-DCN step (10 samples/s) |
 
 **Mixed-precision correctness.** Under bf16/TF32 the detection head, camera
@@ -124,5 +147,22 @@ Start the local UI from the repository root:
 mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
 ```
 
-Resume logging into an existing run with `--mlflow-run-id <run_id>`, or log
-the saved checkpoint as an MLflow artifact with `--mlflow-log-checkpoints`.
+From another machine, tunnel the port over SSH and open http://localhost:5000:
+
+```bash
+ssh -N -L 5000:127.0.0.1:5000 <training-host>
+```
+
+What a training run logs:
+
+| Where in the UI | Content |
+|---|---|
+| Run description (Overview) | live progress: epoch, % done, elapsed, avg epoch time, ETA and finish time, last loss |
+| Metrics `train/loss`, `train/lr` | every `--log-every-updates` (default 10) optimizer updates |
+| Metrics `progress/*` | fractional epoch, percent, elapsed / avg-epoch / ETA hours |
+| Metrics `epoch/*` | per-epoch mean losses (final and each decoder layer `dN.*`), lr |
+| Artifacts `bev_features/` | BEV images every `--vis-every-epochs` epochs: front camera, PCA of the BEV features, feature distinctiveness, GT (green) and predicted (orange) boxes |
+| Parameters | every CLI argument plus dataset size and effective batch size |
+
+`--resume` continues the checkpoint's MLflow run automatically; use
+`--mlflow-log-checkpoints` to also upload per-epoch weights as artifacts.
