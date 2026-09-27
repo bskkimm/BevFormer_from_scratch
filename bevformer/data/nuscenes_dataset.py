@@ -183,6 +183,7 @@ class BevFormerNuScenesDataset(Dataset):
             "scene_token": self.samples[sample_token]["scene_token"],
             "lidar2img": lidar2img,
             "ego2global_translation": np.asarray(ego_pose["translation"], dtype=np.float32),
+            "lidar2global": ref_lidar2global,
             "ego2global_rotation": ego_pose["rotation"],
             "gt_boxes_3d": boxes,
             "gt_labels_3d": labels,
@@ -237,15 +238,15 @@ class BevFormerNuScenesDataset(Dataset):
             # Indices 7:16 (accel, rotation_rate, velocity) are zero-filled:
             # the CAN bus expansion tables are not part of the standard
             # v1.0-trainval metadata this dataset reads. Indices 16:18 hold
-            # the raw x/y translation delta (ego-plane, meters) versus the
-            # previous queue frame, needed by the BEV encoder's temporal
-            # warp; yaw delta is not stored separately since it can be
-            # recomputed on demand from the absolute rotation quaternions
-            # at indices 3:7 of consecutive frames.
+            # this frame's LIDAR_TOP origin expressed in the previous queue
+            # frame's LIDAR_TOP (= BEV) coordinates, in meters: the translation
+            # the encoder's temporal warp applies. (A global-frame delta would
+            # point the wrong way whenever the car is not heading along global
+            # x.) The yaw delta is not stored: it is recomputed from the
+            # absolute rotation quaternions at indices 3:7 of consecutive frames.
             if i > 0 and queue_tokens[i] != queue_tokens[i - 1]:
-                prev_translation = frames[i - 1]["ego2global_translation"]
-                delta_translation = frame["ego2global_translation"][:2] - prev_translation[:2]
-                can_bus[i, 16:18] = torch.from_numpy(delta_translation)
+                current_in_prev = invert_se3(frames[i - 1]["lidar2global"]) @ frame["lidar2global"]
+                can_bus[i, 16:18] = torch.from_numpy(current_in_prev[:2, 3].astype(np.float32))
         return can_bus
 
     def __getitem__(self, idx: int) -> dict:

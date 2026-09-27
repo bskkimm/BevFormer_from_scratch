@@ -68,3 +68,29 @@ def test_warp_is_float32_exact_under_autocast_and_tf32():
 
     assert amp.dtype == torch.float32
     torch.testing.assert_close(amp, exact, atol=1e-5, rtol=1e-5)
+
+
+def test_warp_aligns_static_world_points_given_bev_frame_relative_pose():
+    # Features = each previous-frame cell's own (x, y) coordinates. Bilinear sampling
+    # of a linear function is exact, so after warping, every current cell must hold
+    # the previous-frame coordinates of the same world point: R(dyaw) q + t_rel.
+    import math
+
+    pc_range = (-10.0, -10.0, -2.0, 10.0, 10.0, 2.0)
+    bev = 20  # 1 m cells
+    yaw_prev, yaw_curr = 0.3, 0.5
+    t_rel = torch.tensor([1.0, 3.0])  # current origin expressed in the previous BEV frame
+
+    centers = torch.arange(bev, dtype=torch.float32) - bev / 2 + 0.5
+    ys, xs = torch.meshgrid(centers, centers, indexing="ij")
+    prev_bev = torch.stack([xs, ys], dim=-1).reshape(1, bev * bev, 2)
+
+    warped = warp_prev_bev(prev_bev, bev, bev, t_rel[None], torch.tensor([yaw_curr - yaw_prev]), pc_range)
+    warped = warped.reshape(bev, bev, 2)
+
+    d = yaw_curr - yaw_prev
+    rotation = torch.tensor([[math.cos(d), -math.sin(d)], [math.sin(d), math.cos(d)]])
+    expected = (torch.stack([xs, ys], dim=-1) @ rotation.T) + t_rel
+    inside = (expected.abs() < bev / 2 - 1).all(dim=-1)  # away from the zero-padded border
+    assert inside.sum() > 100
+    torch.testing.assert_close(warped[inside], expected[inside], atol=1e-3, rtol=1e-3)

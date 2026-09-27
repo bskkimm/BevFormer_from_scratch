@@ -7,6 +7,7 @@ BevFormerNuScenesDataset to load it, without requiring the real dataset.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +31,10 @@ def _token(prefix: str, index: int) -> str:
 
 
 def build_synthetic_nuscenes(
-    root: Path, version: str = "v1.0-trainval", scene_names: dict[str, str] | None = None
+    root: Path,
+    version: str = "v1.0-trainval",
+    scene_names: dict[str, str] | None = None,
+    ego_yaw: float = 0.0,
 ) -> dict:
     """Writes a synthetic dataset tree under `root` and returns bookkeeping info.
 
@@ -44,6 +48,10 @@ def build_synthetic_nuscenes(
 
     `scene_names` optionally overrides a scene's human-readable "name" field,
     e.g. {"scene_b": "scene-0003"} to make it an official val scene.
+
+    `ego_yaw` (radians) rotates the ego vehicle in the global frame; it always
+    drives 1 m per sample along its own heading, so with ego_yaw != 0 the global
+    and ego/BEV frames disagree about the direction of motion.
     """
     meta_root = root / version
     meta_root.mkdir(parents=True, exist_ok=True)
@@ -105,13 +113,13 @@ def build_synthetic_nuscenes(
         sample_tokens = [_token(f"sample_{scene_name}", i) for i in range(num_samples)]
         for local_index, sample_token in enumerate(sample_tokens):
             timestamp = global_sample_index * 500_000  # microseconds, 0.5s apart
-            ego_translation = [float(global_sample_index), 0.0, 0.0]
+            ego_translation = [global_sample_index * math.cos(ego_yaw), global_sample_index * math.sin(ego_yaw), 0.0]
             ego_pose_token = f"egopose_{sample_token}"
             ego_pose_rows.append(
                 {
                     "token": ego_pose_token,
                     "timestamp": timestamp,
-                    "rotation": IDENTITY_ROTATION,
+                    "rotation": [math.cos(ego_yaw / 2), 0.0, 0.0, math.sin(ego_yaw / 2)],
                     "translation": ego_translation,
                 }
             )

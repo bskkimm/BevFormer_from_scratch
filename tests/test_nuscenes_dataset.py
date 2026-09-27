@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 import torch
@@ -156,3 +158,14 @@ def test_train_val_split_requires_trainval_version(tmp_path):
     with pytest.raises(ValueError, match="v1.0-trainval"):
         BevFormerNuScenesDataset(info["dataroot"], "v1.0-mini", queue_length=1, image_size=(8, 16), split="train")
     assert len(BevFormerNuScenesDataset(info["dataroot"], "v1.0-mini", queue_length=1, image_size=(8, 16))) == 7
+
+
+def test_can_bus_translation_delta_is_in_the_previous_bev_frame(tmp_path):
+    # The car faces global +y (yaw 90 deg) and drives 1 m forward per sample: globally
+    # it moves along +y, but in its own LIDAR_TOP/BEV frame the motion is +x (the
+    # fixture's lidar is aligned with the ego frame). The warp needs the BEV-frame delta.
+    info = build_synthetic_nuscenes(tmp_path, ego_yaw=math.pi / 2)
+    dataset = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=4, image_size=(8, 16))
+    sample = dataset[dataset.sample_tokens.index(info["scene_a_sample_tokens"][-1])]
+    for i in range(1, 4):
+        np.testing.assert_allclose(sample["can_bus"][i, 16:18].numpy(), [1.0, 0.0], atol=1e-5)
