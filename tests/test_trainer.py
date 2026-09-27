@@ -123,3 +123,65 @@ def test_move_batch_to_device_normalizes_uint8_images():
     moved = move_batch_to_device(batch, torch.device("cpu"))
     assert moved["imgs"].dtype == torch.float32
     torch.testing.assert_close(moved["imgs"], normalize_images(batch["imgs"]))
+
+
+class _LinearModel(torch.nn.Module):
+    """Stand-in exposing the trainer's model/criterion interface with a plain mean loss."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 1, bias=False)
+
+    def forward(self, imgs, img_metas, can_bus):
+        pred = self.linear(imgs.flatten(1))
+        return {"cls_scores": pred, "bbox_preds": pred}
+
+
+class _MeanSquaredCriterion:
+    def loss_by_feat(self, cls_scores, bbox_preds, gt_boxes, gt_labels):
+        target = torch.stack([boxes.sum() for boxes in gt_boxes]).view(-1, 1)
+        return {"loss_mse": ((cls_scores - target) ** 2).mean()}
+
+
+def _linear_batch(values, targets):
+    return {
+        "imgs": torch.tensor(values, dtype=torch.float32),
+        "img_metas": [[{}] for _ in values],
+        "can_bus": torch.zeros(len(values), 1, 18),
+        "gt_boxes_3d": [torch.tensor([t]) for t in targets],
+        "gt_labels_3d": [torch.tensor([0]) for _ in values],
+    }
+
+
+def test_accumulating_two_micro_batches_equals_one_batch_of_two():
+    samples = [([1.0, 2.0, 3.0], 1.0), ([-1.0, 0.5, 2.0], -2.0)]
+    torch.manual_seed(0)
+    accumulated = _LinearModel()
+    single = _LinearModel()
+    single.load_state_dict(accumulated.state_dict())
+    opt_a = torch.optim.SGD(accumulated.parameters(), lr=0.1)
+    opt_s = torch.optim.SGD(single.parameters(), lr=0.1)
+
+    micro = [_linear_batch([v], [t]) for v, t in samples]
+    whole = [_linear_batch([v for v, _ in samples], [t for _, t in samples])]
+    metrics_a = train_one_epoch(accumulated, _MeanSquaredCriterion(), micro, opt_a, torch.device("cpu"), accumulation_steps=2)
+    metrics_s = train_one_epoch(single, _MeanSquaredCriterion(), whole, opt_s, torch.device("cpu"))
+
+    assert metrics_a["updates"] == metrics_s["updates"] == 1
+    torch.testing.assert_close(accumulated.linear.weight, single.linear.weight)
+
+
+def test_partial_last_window_still_steps_and_hooks_see_global_updates():
+    batches = [_linear_batch([[1.0, 0.0, 0.0]], [1.0]) for _ in range(5)]
+    model = _LinearModel()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    lr_calls, updates = [], []
+    metrics = train_one_epoch(
+        model, _MeanSquaredCriterion(), batches, optimizer, torch.device("cpu"),
+        accumulation_steps=2, epoch=3, start_update=10,
+        lr_schedule=lambda epoch, update: lr_calls.append((epoch, update)),
+        update_callback=lambda state: updates.append((state["update"], state["micro_batches_done"])),
+    )
+    assert metrics["updates"] == 3  # windows of 2, 2, and a final partial 1
+    assert lr_calls == [(3, 10), (3, 11), (3, 12)]
+    assert updates == [(11, 2), (12, 4), (13, 5)]
