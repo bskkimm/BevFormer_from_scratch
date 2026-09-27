@@ -63,3 +63,16 @@ def test_configure_runtime_sets_backend_flags():
         assert torch.backends.cudnn.allow_tf32 == saved[1]
     finally:
         torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32, torch.backends.cudnn.benchmark = saved
+
+
+def test_split_defaults_and_is_passed_to_the_dataset(tmp_path):
+    info = build_synthetic_nuscenes(tmp_path, scene_names={"scene_b": "scene-0003"})
+    assert _parse([]).split == "train"
+    eval_parser = argparse.ArgumentParser()
+    add_data_args(eval_parser, default_split="val")
+    assert eval_parser.parse_args([]).split == "val"
+
+    common = ["--dataroot", str(info["dataroot"]), "--queue-length", "1", "--image-height", "8",
+              "--image-width", "16", "--num-workers", "0"]
+    assert len(build_dataloader(_parse(common)).dataset) == 5                      # train: scene_a
+    assert len(build_dataloader(_parse(common + ["--split", "val"])).dataset) == 2  # val: scene_b

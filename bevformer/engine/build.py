@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 from bevformer.data.collate import collate_fn
 from bevformer.data.nuscenes_dataset import BevFormerNuScenesDataset
+from bevformer.data.nuscenes_splits import SPLITS
 from bevformer.models.backbone.image_backbone import MultiViewImageBackbone
 from bevformer.models.bevformer import BEVFormerModel
 from bevformer.models.grid_mask import GridMask
@@ -44,9 +45,13 @@ def configure_runtime(args: argparse.Namespace) -> None:
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
 
-def add_data_args(parser: argparse.ArgumentParser) -> None:
+def add_data_args(parser: argparse.ArgumentParser, default_split: str = "train") -> None:
     parser.add_argument("--dataroot", default="~/dataset/nuscenes")
     parser.add_argument("--version", default="v1.0-trainval")
+    parser.add_argument(
+        "--split", default=default_split, choices=list(SPLITS),
+        help="official v1.0-trainval scenes: train (28,130 samples), val (6,019), or all",
+    )
     parser.add_argument("--queue-length", type=int, default=4)
     parser.add_argument("--image-height", type=int, default=900)
     parser.add_argument("--image-width", type=int, default=1600)
@@ -114,7 +119,7 @@ def build_model(args: argparse.Namespace) -> BEVFormerModel:
     return BEVFormerModel(backbone, neck, encoder, decoder, head, grid_mask=grid_mask)
 
 
-def build_dataloader(args: argparse.Namespace) -> DataLoader:
+def build_dataloader(args: argparse.Namespace, shuffle: bool = True) -> DataLoader:
     dataset = BevFormerNuScenesDataset(
         dataroot=args.dataroot,
         version=args.version,
@@ -122,6 +127,7 @@ def build_dataloader(args: argparse.Namespace) -> DataLoader:
         image_size=(args.image_height, args.image_width),
         pc_range=PC_RANGE,
         image_dtype=args.image_dtype,
+        split=args.split,
     )
     worker_kwargs = {}
     if args.num_workers > 0:  # DataLoader rejects these options without worker processes
@@ -129,7 +135,7 @@ def build_dataloader(args: argparse.Namespace) -> DataLoader:
     return DataLoader(
         dataset,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=shuffle,
         collate_fn=collate_fn,
         num_workers=args.num_workers,
         pin_memory=args.pin_memory,

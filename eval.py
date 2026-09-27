@@ -18,7 +18,7 @@ from bevformer.engine.trainer import move_batch_to_device
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a BEVFormer checkpoint.")
-    add_data_args(parser)
+    add_data_args(parser, default_split="val")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--score-threshold", type=float, default=0.3)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -30,7 +30,7 @@ def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
 
-    dataloader = build_dataloader(args)
+    dataloader = build_dataloader(args, shuffle=False)
     model = build_model(args).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()

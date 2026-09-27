@@ -38,7 +38,8 @@ python train.py \
   --checkpoint-out checkpoints/bevformer.pth
 ```
 
-The throughput-tuned defaults (bf16 autocast, TF32 matmuls, uint8 images, 8
+Training uses the official nuScenes train split (700 scenes, 28,130 samples)
+by default; `--split all` adds the val scenes. The throughput-tuned defaults (bf16 autocast, TF32 matmuls, uint8 images, 8
 workers, pinned memory) are on without any flags — see "Training Throughput"
 below; `--amp none --no-tf32` gives plain fp32. The backbone defaults to
 ResNet-101 with DCNv2 in stages 4-5, as in official BEVFormer-Base; use
@@ -69,7 +70,7 @@ default model (ResNet-101 + DCNv2, 1600x900, 4-frame queue, 6 cameras, batch 1):
 | GPU-only step (`step`) | 0.785 s | 0.497 s | 1.58x |
 | DataLoader samples/s (`loader`) | 4.8 | 21.0 | 4.4x |
 | Peak GPU memory | 18.1 GiB | 11.6 GiB | -36% |
-| Epoch over all 34,149 v1.0-trainval samples | ~7.9 h | ~4.9 h | |
+| Epoch over the train split (28,130 samples) | ~6.5 h | ~4.0 h | |
 
 Previous defaults: fp32, float32 images, 4 workers, no pinned memory. A cold page
 cache (first epoch) measured the same: 0.516 s/step, loader 23.6 samples/s.
@@ -103,7 +104,8 @@ python eval.py \
   --checkpoint checkpoints/bevformer.pth
 ```
 
-Reports lightweight sanity metrics (greedy center-distance match rate, mean
+Evaluates the official val split (150 scenes, 6,019 samples) by default and
+reports lightweight sanity metrics (greedy center-distance match rate, mean
 center error) — **not** official nuScenes mAP/NDS. See
 `bevformer/engine/evaluator.py`'s module docstring and `README.md` for why.
 
