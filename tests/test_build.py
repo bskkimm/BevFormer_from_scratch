@@ -2,7 +2,7 @@ import argparse
 
 import torch
 
-from bevformer.engine.build import add_data_args, add_runtime_args, build_dataloader, configure_runtime
+from bevformer.engine.build import add_data_args, add_runtime_args, build_dataloader, configure_runtime, prepare_model
 from tests.fixtures.build_synthetic_nuscenes import build_synthetic_nuscenes
 
 
@@ -48,6 +48,16 @@ def test_data_and_runtime_defaults_are_the_measured_throughput_setup():
     args = parser.parse_args([])
     assert (args.image_dtype, args.num_workers, args.pin_memory, args.persistent_workers) == ("uint8", 8, True, True)
     assert (args.amp, args.tf32, args.cudnn_benchmark) == ("bf16", True, False)
+    assert args.compile_backbone and args.fused_adamw
+
+
+def test_prepare_model_skips_compile_off_cuda():
+    parser = argparse.ArgumentParser()
+    add_runtime_args(parser)
+    model = torch.nn.Module()
+    model.backbone = torch.nn.Linear(2, 2)
+    prepared = prepare_model(model, parser.parse_args([]), torch.device("cpu"))
+    assert prepared is model and type(model.backbone.forward).__name__ == "method"
 
 
 def test_configure_runtime_sets_backend_flags():

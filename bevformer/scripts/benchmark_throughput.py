@@ -33,7 +33,9 @@ from bevformer.engine.build import (
     build_dataloader,
     build_model,
     configure_runtime,
+    prepare_model,
 )
+from bevformer.engine.optim import build_optimizer
 from bevformer.engine.trainer import train_one_epoch
 from bevformer.models.losses.bevformer_loss import BEVFormerLoss
 
@@ -75,9 +77,11 @@ def bench_loader(args: argparse.Namespace) -> dict[str, float]:
 
 
 def _training_setup(args: argparse.Namespace, device: torch.device):
-    model = build_model(args).to(device)
+    model = prepare_model(build_model(args), args, device)
     criterion = BEVFormerLoss(num_classes=args.num_classes, pc_range=PC_RANGE)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=0.01)
+    optimizer = build_optimizer(
+        model, lr=2e-4, weight_decay=0.01, fused=args.fused_adamw and device.type == "cuda"
+    )
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp == "fp16" and device.type == "cuda")
     return model, criterion, optimizer, scaler
 
@@ -135,7 +139,7 @@ def main() -> None:
         key: getattr(args, key)
         for key in (
             "mode", "batch_size", "num_workers", "pin_memory", "persistent_workers", "prefetch_factor",
-            "image_dtype", "amp", "tf32", "cudnn_benchmark", "image_height", "image_width", "queue_length",
+            "image_dtype", "amp", "tf32", "cudnn_benchmark", "compile_backbone", "fused_adamw", "image_height", "image_width", "queue_length",
             "backbone_variant", "dcn",
         )
     }
