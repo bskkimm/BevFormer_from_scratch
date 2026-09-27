@@ -93,9 +93,10 @@ default model (ResNet-101 + DCNv2, 1600x900, 4-frame queue, 6 cameras, batch 1):
 Previous defaults: fp32, float32 images, 4 workers, no pinned memory. A cold page
 cache (first epoch) measured the same: 0.516 s/step, loader 23.6 samples/s.
 
-Current default model (100x100 BEV, 6 encoder layers, compiled backbone,
-fused AdamW): **0.742 s/step, ~5.8 h per train-split epoch, ~5.8 days for 24
-epochs.** The table above was measured on the earlier 50x50 / 3-layer default.
+Current default model (100x100 BEV, 6 encoder layers, 8 spatial-cross-attention
+points per camera and level as in official BEVFormer, compiled backbone, fused
+AdamW): **0.830 s/sample, ~6.5 h per train-split epoch, ~6.5 days for 24 epochs**
+(0.742 s with the earlier 4-point spatial cross-attention). The table above was measured on the earlier 50x50 / 3-layer default.
 
 **Bottleneck: GPU-bound.** The loader delivers ~10x what the GPU consumes, so the
 end-to-end step is within 3% of the GPU-only step.
