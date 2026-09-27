@@ -10,6 +10,8 @@ for different time steps).
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,8 +35,17 @@ class MultiScaleDeformableAttention(nn.Module):
         self.value_proj = nn.Linear(embed_dims, embed_dims)
         self.output_proj = nn.Linear(embed_dims, embed_dims)
 
+        # Official Deformable-DETR/BEVFormer init: zero offset weights, with the bias
+        # fanning head h out along direction 2*pi*h/num_heads (max-abs normalized) and
+        # sample i at distance i + 1, so heads and samples start at distinct locations
+        # (all-zero offsets would put them on one point with identical gradients).
         nn.init.zeros_(self.sampling_offsets.weight)
-        nn.init.zeros_(self.sampling_offsets.bias)
+        thetas = torch.arange(num_heads, dtype=torch.float32) * (2.0 * math.pi / num_heads)
+        grid = torch.stack([thetas.cos(), thetas.sin()], -1)
+        grid = (grid / grid.abs().max(-1, keepdim=True)[0]).view(num_heads, 1, 1, 2).repeat(1, num_levels, num_points, 1)
+        grid = grid * torch.arange(1, num_points + 1, dtype=torch.float32).view(1, 1, num_points, 1)
+        with torch.no_grad():
+            self.sampling_offsets.bias.copy_(grid.view(-1))
         nn.init.zeros_(self.attention_weights.weight)
         nn.init.zeros_(self.attention_weights.bias)
 

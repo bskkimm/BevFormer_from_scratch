@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 from bevformer.models.transformer.deformable_attention import MultiScaleDeformableAttention
@@ -57,3 +59,20 @@ def test_fully_masked_point_gives_finite_output():
 
     output = attn(query, reference_points, value, spatial_shapes, point_mask=point_mask)
     assert torch.isfinite(output).all()
+
+
+def test_sampling_offsets_start_on_the_official_grid():
+    # Official (Deformable DETR / BEVFormer) init: head h points in direction
+    # (cos, sin)(2*pi*h / num_heads), scaled so max(|x|, |y|) = 1, and sample i
+    # sits at distance i + 1 -- instead of every head and sample starting at the
+    # same location, where they would receive identical gradients.
+    heads, levels, points = 8, 2, 3
+    attn = MultiScaleDeformableAttention(embed_dims=16, num_heads=heads, num_levels=levels, num_points=points)
+    assert torch.all(attn.sampling_offsets.weight == 0)
+    thetas = torch.arange(heads, dtype=torch.float32) * (2.0 * math.pi / heads)
+    direction = torch.stack([thetas.cos(), thetas.sin()], -1)
+    direction = direction / direction.abs().max(-1, keepdim=True)[0]
+    expected = direction.view(heads, 1, 1, 2).repeat(1, levels, points, 1)
+    for i in range(points):
+        expected[:, :, i, :] *= i + 1
+    torch.testing.assert_close(attn.sampling_offsets.bias.view(heads, levels, points, 2), expected)
