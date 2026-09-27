@@ -19,6 +19,7 @@ venv/
 dataset/
 datasets/
 checkpoints/
+runs/
 *.pth
 logs/
 outputs/
