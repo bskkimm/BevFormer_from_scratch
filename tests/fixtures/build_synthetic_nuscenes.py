@@ -29,7 +29,9 @@ def _token(prefix: str, index: int) -> str:
     return f"{prefix}_{index:03d}"
 
 
-def build_synthetic_nuscenes(root: Path, version: str = "v1.0-trainval") -> dict:
+def build_synthetic_nuscenes(
+    root: Path, version: str = "v1.0-trainval", scene_names: dict[str, str] | None = None
+) -> dict:
     """Writes a synthetic dataset tree under `root` and returns bookkeeping info.
 
     Layout: two scenes.
@@ -39,6 +41,9 @@ def build_synthetic_nuscenes(root: Path, version: str = "v1.0-trainval") -> dict
 
     Each sample's ego vehicle moves +1.0m in x per step, so consecutive real
     frames have a nonzero translation/yaw delta.
+
+    `scene_names` optionally overrides a scene's human-readable "name" field,
+    e.g. {"scene_b": "scene-0003"} to make it an official val scene.
     """
     meta_root = root / version
     meta_root.mkdir(parents=True, exist_ok=True)
@@ -178,7 +183,7 @@ def build_synthetic_nuscenes(root: Path, version: str = "v1.0-trainval") -> dict
 
         scenes[scene_name] = {
             "token": scene_name,
-            "name": scene_name,
+            "name": (scene_names or {}).get(scene_name, scene_name),
             "log_token": "log_0",
             "nbr_samples": num_samples,
             "first_sample_token": sample_tokens[0],

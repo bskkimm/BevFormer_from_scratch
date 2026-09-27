@@ -16,6 +16,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from bevformer.data.nuscenes_categories import CLASS_TO_ID, category_to_detection_class
+from bevformer.data.nuscenes_splits import SPLIT_VERSION, SPLITS, in_split
 from bevformer.data.nuscenes_geometry import (
     invert_se3,
     pose_to_matrix,
@@ -64,18 +65,27 @@ class BevFormerNuScenesDataset(Dataset):
         image_size: tuple[int, int] = DEFAULT_IMAGE_SIZE,
         pc_range: tuple[float, float, float, float, float, float] = DEFAULT_PC_RANGE,
         image_dtype: str = "float32",
+        split: str = "all",
     ) -> None:
         """`image_dtype="uint8"` returns raw pixels, to be normalized on the GPU with
         `bevformer.data.transforms.normalize_images` (`move_batch_to_device` does this
-        automatically); "float32" returns ImageNet-normalized images."""
+        automatically); "float32" returns ImageNet-normalized images.
+
+        `split` selects the official v1.0-trainval scenes: "train" (700 scenes),
+        "val" (150), or "all"."""
         if image_dtype not in ("float32", "uint8"):
             raise ValueError(f"Unsupported image_dtype: {image_dtype}")
+        if split not in SPLITS:
+            raise ValueError(f"Unsupported split: {split} (expected one of {SPLITS})")
+        if split != "all" and version != SPLIT_VERSION:
+            raise ValueError(f"split={split!r} is defined for {SPLIT_VERSION} only; use split='all' for {version}")
         self.dataroot = Path(dataroot).expanduser()
         self.meta_root = self.dataroot / version
         self.queue_length = queue_length
         self.image_size = image_size
         self.pc_range = pc_range
         self.image_dtype = image_dtype
+        self.split = split
 
         self.samples = _index_by(_load_table(self.meta_root, "sample"))
         self.scenes = _index_by(_load_table(self.meta_root, "scene"))
@@ -104,6 +114,8 @@ class BevFormerNuScenesDataset(Dataset):
     def _collect_sample_tokens_in_scene_order(self) -> list[str]:
         tokens: list[str] = []
         for scene in self.scenes.values():
+            if not in_split(scene["name"], self.split):
+                continue
             token = scene["first_sample_token"]
             while token:
                 tokens.append(token)

@@ -139,3 +139,20 @@ def test_uint8_images_normalize_to_float32_images(tmp_path):
     raw = as_uint8[0]["imgs"]
     assert raw.dtype == torch.uint8
     torch.testing.assert_close(normalize_images(raw), as_float[0]["imgs"])
+
+
+@pytest.mark.parametrize(("split", "expected_len"), [("train", 5), ("val", 2), ("all", 7)])
+def test_split_selects_official_train_or_val_scenes(tmp_path, split, expected_len):
+    info = build_synthetic_nuscenes(tmp_path, scene_names={"scene_b": "scene-0003"})  # scene-0003 is official val
+    dataset = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=2, image_size=(8, 16), split=split)
+    assert len(dataset) == expected_len
+    expected_scene = {"train": "scene_a", "val": "scene_b"}.get(split)
+    if expected_scene is not None:
+        assert {dataset.samples[t]["scene_token"] for t in dataset.sample_tokens} == {expected_scene}
+
+
+def test_train_val_split_requires_trainval_version(tmp_path):
+    info = build_synthetic_nuscenes(tmp_path, version="v1.0-mini")
+    with pytest.raises(ValueError, match="v1.0-trainval"):
+        BevFormerNuScenesDataset(info["dataroot"], "v1.0-mini", queue_length=1, image_size=(8, 16), split="train")
+    assert len(BevFormerNuScenesDataset(info["dataroot"], "v1.0-mini", queue_length=1, image_size=(8, 16))) == 7
