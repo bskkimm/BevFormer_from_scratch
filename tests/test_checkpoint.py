@@ -28,6 +28,15 @@ def test_checkpoint_round_trip_restores_weights_optimizer_and_state(tmp_path):
     assert not list(tmp_path.glob("ckpt/*.tmp"))  # atomic write left no temp file
 
 
+def test_bare_state_dict_checkpoint_still_loads(tmp_path):
+    model, _ = _model_and_optimizer()
+    torch.save(model.state_dict(), tmp_path / "old.pth")
+    fresh, _ = _model_and_optimizer()
+    assert load_checkpoint(tmp_path / "old.pth", fresh) == {}
+    for a, b in zip(model.state_dict().values(), fresh.state_dict().values()):
+        torch.testing.assert_close(a, b)
+
+
 def test_weights_only_checkpoint_loads_without_optimizer(tmp_path):
     model, _ = _model_and_optimizer()
     path = save_checkpoint(tmp_path / "w.pth", model, epoch=1)

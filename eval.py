@@ -12,6 +12,7 @@ import argparse
 import torch
 
 from bevformer.engine.build import add_data_args, add_model_args, build_dataloader, build_model
+from bevformer.engine.checkpoint import load_checkpoint
 from bevformer.engine.evaluator import decode_predictions, evaluate_predictions
 from bevformer.engine.trainer import move_batch_to_device
 
@@ -32,7 +33,7 @@ def main() -> None:
 
     dataloader = build_dataloader(args, shuffle=False)
     model = build_model(args).to(device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    load_checkpoint(args.checkpoint, model, map_location=device)
     model.eval()
 
     all_pred_boxes, all_pred_labels, all_pred_scores = [], [], []

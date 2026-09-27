@@ -27,8 +27,12 @@ def save_checkpoint(path: str | Path, model, optimizer=None, **state: Any) -> Pa
 
 
 def load_checkpoint(path: str | Path, model, optimizer=None, map_location="cpu") -> dict[str, Any]:
-    """Loads weights into `model` (and `optimizer` if given); returns the remaining saved state."""
+    """Loads weights into `model` (and `optimizer` if given); returns the remaining saved state.
+
+    Also accepts a bare model state_dict (the format of older train.py outputs)."""
     payload = torch.load(path, map_location=map_location, weights_only=False)
+    if "model" not in payload:
+        payload = {"model": payload}
     model.load_state_dict(payload.pop("model"))
     optimizer_state = payload.pop("optimizer", None)
     if optimizer is not None and optimizer_state is not None:
