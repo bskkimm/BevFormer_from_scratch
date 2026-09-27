@@ -16,12 +16,31 @@ class SpatialCrossAttention(nn.Module):
         num_levels: int,
         num_points_in_pillar: int,
         num_heads: int = 8,
+        num_points_per_anchor: int = 2,
     ) -> None:
+        """Each of the `num_points_in_pillar` projected pillar anchors gets
+        `num_points_per_anchor` learned sampling points (official BEVFormer: 4 x 2 = 8)."""
         super().__init__()
         self.num_cams = num_cams
         self.num_levels = num_levels
+        self.num_points_per_anchor = num_points_per_anchor
         self.deform_attn = MultiScaleDeformableAttention(
-            embed_dims, num_heads, num_levels, num_points_in_pillar
+            embed_dims, num_heads, num_levels, num_points_in_pillar * num_points_per_anchor
+        )
+
+    def expand_anchor_points(
+        self, ref_points_cam: torch.Tensor, bev_mask_cam: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """[B, Q, D, 2] references and [B, Q, D] validity for one camera ->
+        [B, Q, levels, D * P, 2] references and [B, Q, levels, D * P] invalid-masks,
+        point k belonging to anchor k % D (MSDeformableAttention3D's layout)."""
+        batch, num_query, anchors, _ = ref_points_cam.shape
+        points = anchors * self.num_points_per_anchor
+        refs = ref_points_cam.repeat(1, 1, self.num_points_per_anchor, 1)
+        invalid = (~bev_mask_cam).repeat(1, 1, self.num_points_per_anchor)
+        return (
+            refs[:, :, None].expand(batch, num_query, self.num_levels, points, 2),
+            invalid[:, :, None].expand(batch, num_query, self.num_levels, points),
         )
 
     def forward(
@@ -51,17 +70,7 @@ class SpatialCrossAttention(nn.Module):
                 [feat[:, cam].flatten(2).transpose(1, 2) for feat in mlvl_feats], dim=1
             )  # [B, S, C]
 
-            ref_points_cam = reference_points_cam[cam]  # [B, Q, D, 2]
-            num_points_in_pillar = ref_points_cam.shape[2]
-            ref_points_expanded = ref_points_cam[:, :, None, :, :].expand(
-                batch, num_query, self.num_levels, num_points_in_pillar, 2
-            )
-
-            invalid_mask = ~bev_mask[cam]  # [B, Q, D]
-            point_mask = invalid_mask[:, :, None, :].expand(
-                batch, num_query, self.num_levels, num_points_in_pillar
-            )
-
+            ref_points_expanded, point_mask = self.expand_anchor_points(reference_points_cam[cam], bev_mask[cam])
             out_cam = self.deform_attn(query, ref_points_expanded, value, spatial_shapes, point_mask=point_mask)
             cam_valid = bev_mask[cam].any(dim=-1).to(query.dtype).unsqueeze(-1)  # [B, Q, 1]
 

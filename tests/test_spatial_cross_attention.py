@@ -55,3 +55,23 @@ def test_gradient_flows_to_parameters():
     output.sum().backward()
     for param in sca.parameters():
         assert param.grad is not None
+
+
+def test_multiple_learned_points_per_pillar_anchor_follow_their_anchor():
+    # Official MSDeformableAttention3D: num_points = points_per_anchor * pillar anchors,
+    # point k attached to anchor k % D, starting at that anchor's projection and
+    # masked by that anchor's validity.
+    batch, num_query, embed_dims, num_cams, anchors, per_anchor = 1, 5, 8, 2, 3, 2
+    sca = SpatialCrossAttention(embed_dims, num_cams, 1, anchors, num_heads=2, num_points_per_anchor=per_anchor)
+    assert sca.deform_attn.num_points == anchors * per_anchor
+
+    ref = torch.rand(num_cams, batch, num_query, anchors, 2)
+    mask = torch.rand(num_cams, batch, num_query, anchors) > 0.3
+    tiled_ref, tiled_mask = sca.expand_anchor_points(ref[0], mask[0])
+    assert tiled_ref.shape == (batch, num_query, 1, anchors * per_anchor, 2)
+    for k in range(anchors * per_anchor):
+        torch.testing.assert_close(tiled_ref[:, :, 0, k], ref[0][:, :, k % anchors])
+        assert torch.equal(tiled_mask[:, :, 0, k], ~mask[0][:, :, k % anchors])
+
+    out = sca(torch.randn(batch, num_query, embed_dims), [torch.randn(batch, num_cams, embed_dims, 4, 4)], ref, mask)
+    assert out.shape == (batch, num_query, embed_dims) and torch.isfinite(out).all()
