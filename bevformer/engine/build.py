@@ -10,7 +10,7 @@ import argparse
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from bevformer.data.collate import collate_fn
 from bevformer.data.nuscenes_dataset import BevFormerNuScenesDataset
@@ -74,6 +74,7 @@ def add_data_args(parser: argparse.ArgumentParser, default_split: str = "train")
     parser.add_argument("--image-height", type=int, default=900)
     parser.add_argument("--image-width", type=int, default=1600)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--subset", type=int, default=None, help="use only the first N samples (smoke tests)")
     # Throughput defaults below are the measured-best setup on a 32-CPU / RTX PRO 6000
     # machine (see COMMAND_GUIDE.md "Training throughput").
     parser.add_argument("--num-workers", type=int, default=8)
@@ -89,12 +90,17 @@ def add_data_args(parser: argparse.ArgumentParser, default_split: str = "train")
 def add_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backbone-variant", default="resnet101", choices=["resnet50", "resnet101"])
     parser.add_argument("--dcn", default="v2", choices=["v2", "v1", "none"])
+    parser.add_argument(
+        "--pretrained-backbone", action=argparse.BooleanOptionalAction, default=True,
+        help="initialize the backbone from torchvision ImageNet weights",
+    )
     parser.add_argument("--embed-dims", type=int, default=256)
-    parser.add_argument("--bev-h", type=int, default=50)
-    parser.add_argument("--bev-w", type=int, default=50)
+    # 100x100 (1.02 m cells) instead of Base's 200x200: 2.2x faster per step (measured).
+    parser.add_argument("--bev-h", type=int, default=100)
+    parser.add_argument("--bev-w", type=int, default=100)
     parser.add_argument("--num-queries", type=int, default=900)
     parser.add_argument("--num-classes", type=int, default=10)
-    parser.add_argument("--num-encoder-layers", type=int, default=3)
+    parser.add_argument("--num-encoder-layers", type=int, default=6)
     parser.add_argument("--num-decoder-layers", type=int, default=6)
     parser.add_argument("--num-points-in-pillar", type=int, default=4)
     parser.add_argument("--num-heads", type=int, default=8)
@@ -102,7 +108,7 @@ def add_model_args(parser: argparse.ArgumentParser) -> None:
 
 def build_model(args: argparse.Namespace) -> BEVFormerModel:
     backbone = MultiViewImageBackbone(
-        variant=args.backbone_variant, pretrained=True, frozen_stages=1, dcn=args.dcn
+        variant=args.backbone_variant, pretrained=args.pretrained_backbone, frozen_stages=1, dcn=args.dcn
     )
     neck = ImageFPN(in_channels=(512, 1024, 2048), out_channels=args.embed_dims)
     encoder = BEVFormerEncoder(
@@ -147,6 +153,8 @@ def build_dataloader(args: argparse.Namespace, shuffle: bool = True) -> DataLoad
         image_dtype=args.image_dtype,
         split=args.split,
     )
+    if args.subset is not None:
+        dataset = Subset(dataset, range(min(args.subset, len(dataset))))
     worker_kwargs = {}
     if args.num_workers > 0:  # DataLoader rejects these options without worker processes
         worker_kwargs = {"persistent_workers": args.persistent_workers, "prefetch_factor": args.prefetch_factor}
