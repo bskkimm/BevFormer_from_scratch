@@ -31,7 +31,7 @@ def test_output_shapes_across_layers():
     bev_embed = torch.randn(1, bev_h * bev_w, embed_dims)
 
     hidden_states, init_reference, inter_references = decoder(
-        bev_embed, bev_h, bev_w, reference_point_predictor=head.predict_reference_points
+        bev_embed, bev_h, bev_w, init_reference_fn=head.init_reference_points, refine_reference_fn=head.refine_reference_points
     )
 
     assert hidden_states.shape == (num_layers, 1, num_queries, embed_dims)
@@ -46,7 +46,7 @@ def test_gradient_flows_end_to_end():
     bev_embed = torch.randn(1, bev_h * bev_w, embed_dims, requires_grad=True)
 
     hidden_states, _, inter_references = decoder(
-        bev_embed, bev_h, bev_w, reference_point_predictor=head.predict_reference_points
+        bev_embed, bev_h, bev_w, init_reference_fn=head.init_reference_points, refine_reference_fn=head.refine_reference_points
     )
     cls_scores, bbox_preds = head.forward(hidden_states, inter_references)
     (cls_scores.sum() + bbox_preds.sum()).backward()
@@ -54,3 +54,32 @@ def test_gradient_flows_end_to_end():
     assert bev_embed.grad is not None
     for param in decoder.parameters():
         assert param.grad is not None
+
+
+def test_reference_points_follow_official_box_refinement():
+    torch.manual_seed(0)
+    num_layers, embed_dims, bev_h, bev_w = 3, 8, 4, 4
+    decoder, head = _build_decoder_and_head(num_layers, embed_dims, num_queries=6)
+    bev_embed = torch.randn(1, bev_h * bev_w, embed_dims)
+    hs, init_ref, refs = decoder(
+        bev_embed, bev_h, bev_w, init_reference_fn=head.init_reference_points, refine_reference_fn=head.refine_reference_points
+    )
+    # Layer 0 attends at the reference predicted from the positional query embedding.
+    _, query_pos = decoder.init_decoder_state(1, bev_embed.device)
+    torch.testing.assert_close(refs[0], head.init_reference_points(query_pos))
+    torch.testing.assert_close(init_ref, refs[0])
+    # Each later layer attends where the previous layer's box is: decoded centers of
+    # layer l equal the (metric) reference point of layer l + 1.
+    _, boxes = head(hs, refs)
+    for layer in range(num_layers - 1):
+        next_ref = refs[layer + 1]
+        expected = torch.stack([
+            next_ref[..., 0] * (PC_RANGE[3] - PC_RANGE[0]) + PC_RANGE[0],
+            next_ref[..., 1] * (PC_RANGE[4] - PC_RANGE[1]) + PC_RANGE[1],
+            next_ref[..., 2] * (PC_RANGE[5] - PC_RANGE[2]) + PC_RANGE[2],
+        ], dim=-1)
+        torch.testing.assert_close(boxes[layer][..., [0, 1, 4]], expected, atol=1e-4, rtol=1e-4)
+    # Refined references are detached, as in the official decoder: no gradient flows
+    # from later layers' references back into the decoder layers that produced them.
+    refs[1:].sum().backward()
+    assert all(p.grad is None for p in decoder.layers.parameters())

@@ -64,11 +64,11 @@ def test_head_runs_in_float32_under_bf16_autocast():
     refs = torch.rand(2, 1, 6, 3)
     query = torch.randn(1, 6, 8)
     cls32, box32 = head(hs, refs)
-    ref32 = head.predict_reference_points(0, query)
+    ref32 = head.init_reference_points(query)
 
     with torch.autocast("cpu", dtype=torch.bfloat16):
         cls_amp, box_amp = head(hs.bfloat16(), refs.bfloat16())
-        ref_amp = head.predict_reference_points(0, query.bfloat16())
+        ref_amp = head.init_reference_points(query.bfloat16())
 
     assert cls_amp.dtype == box_amp.dtype == ref_amp.dtype == torch.float32
     # Inputs were rounded to bf16, so allow bf16-input-rounding tolerance only.

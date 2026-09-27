@@ -39,22 +39,29 @@ class BEVFormerDecoder(nn.Module):
         bev_embed: torch.Tensor,
         bev_h: int,
         bev_w: int,
-        reference_point_predictor: Callable[[int, torch.Tensor], torch.Tensor],
+        init_reference_fn: Callable[[torch.Tensor], torch.Tensor],
+        refine_reference_fn: Callable[[int, torch.Tensor, torch.Tensor], torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Official BEVFormer decoding with box refinement.
+
+        Layer 0 attends at `init_reference_fn(query_pos)`; after each layer the
+        reference becomes `refine_reference_fn(layer, hidden, reference)` -- the
+        center of that layer's box -- detached before the next layer. Returns hidden
+        states [L, B, Q, C], the initial reference [B, Q, 3], and the reference each
+        layer attended at [L, B, Q, 3] (which that layer's boxes are relative to).
+        """
         batch = bev_embed.shape[0]
         query, query_pos = self.init_decoder_state(batch, bev_embed.device)
         spatial_shapes = [(bev_h, bev_w)]
 
-        init_reference = None
+        init_reference = reference_points = init_reference_fn(query_pos)
         intermediate_states = []
         intermediate_refs = []
         hidden = query
         for layer_idx, layer in enumerate(self.layers):
-            reference_points = reference_point_predictor(layer_idx, hidden)
-            if init_reference is None:
-                init_reference = reference_points
             intermediate_refs.append(reference_points)
             hidden = layer(hidden, query_pos, reference_points[..., :2], bev_embed, spatial_shapes)
             intermediate_states.append(hidden)
+            reference_points = refine_reference_fn(layer_idx, hidden, reference_points).detach()
 
         return torch.stack(intermediate_states), init_reference, torch.stack(intermediate_refs)

@@ -95,7 +95,11 @@ class BEVFormerModel(nn.Module):
                     )
 
         hidden_states, _init_reference, inter_references = self.decoder(
-            bev_embed, self.encoder.bev_h, self.encoder.bev_w, reference_point_predictor=self.head.predict_reference_points
+            bev_embed,
+            self.encoder.bev_h,
+            self.encoder.bev_w,
+            init_reference_fn=self.head.init_reference_points,
+            refine_reference_fn=self.head.refine_reference_points,
         )
         cls_scores, bbox_preds = self.head(hidden_states, inter_references)
         return {"cls_scores": cls_scores, "bbox_preds": bbox_preds, "bev_embed": bev_embed}

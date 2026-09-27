@@ -100,9 +100,17 @@ class BEVFormerHead(nn.Module):
         with torch.autocast(device_type=query_pos.device.type, enabled=False):
             return self.reference_points(query_pos.float()).sigmoid()
 
-    def predict_reference_points(self, layer_idx: int, layer_q: torch.Tensor) -> torch.Tensor:
-        with torch.autocast(device_type=layer_q.device.type, enabled=False):
-            return self.reference_points(layer_q.float()).sigmoid()
+    def refine_reference_points(
+        self, layer_idx: int, layer_hs: torch.Tensor, reference_points: torch.Tensor
+    ) -> torch.Tensor:
+        """Official box refinement: the next layer attends where this layer's box is,
+        sigmoid(reg[x, y, z] + logit(ref)); the decoder detaches the result."""
+        with torch.autocast(device_type=layer_hs.device.type, enabled=False):
+            reg_output = self.regress_boxes(layer_idx, layer_hs.float())
+            ref_logits = inverse_sigmoid(reference_points)
+            return torch.cat(
+                [reg_output[..., 0:2] + ref_logits[..., 0:2], reg_output[..., 4:5] + ref_logits[..., 2:3]], dim=-1
+            ).sigmoid()
 
     def regress_boxes(self, layer_idx: int, layer_hs: torch.Tensor) -> torch.Tensor:
         return self.reg_branches[layer_idx](layer_hs)
