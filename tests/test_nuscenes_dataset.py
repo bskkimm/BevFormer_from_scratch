@@ -189,3 +189,20 @@ def test_gt_velocity_is_zero_without_track_neighbors(tmp_path):
         annotation["prev"] = annotation["next"] = ""  # isolate: no track to difference over
     boxes = dataset[dataset.sample_tokens.index(info["scene_b_sample_tokens"][0])]["gt_boxes_3d"]
     np.testing.assert_allclose(boxes[0, 7:9].numpy(), [0.0, 0.0])
+
+
+def test_gt_drops_boxes_without_sensor_points_or_outside_the_bev_range(tmp_path):
+    # Official BEVFormer: use_valid_flag (lidar + radar points > 0) and
+    # ObjectRangeFilter (BEV center strictly inside pc_range x/y).
+    info = build_synthetic_nuscenes(tmp_path)
+    dataset = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=1, image_size=(8, 16))
+    tokens = info["scene_a_sample_tokens"]
+    (invisible,) = dataset.annotations_by_sample[tokens[1]]
+    invisible["num_lidar_pts"] = invisible["num_radar_pts"] = 0
+    (far,) = dataset.annotations_by_sample[tokens[2]]
+    far["translation"] = [far["translation"][0] + 60.0, *far["translation"][1:]]  # > 51.2 m away
+    (radar_only,) = dataset.annotations_by_sample[tokens[3]]
+    radar_only["num_lidar_pts"], radar_only["num_radar_pts"] = 0, 2  # still valid
+
+    counts = [len(dataset[dataset.sample_tokens.index(t)]["gt_boxes_3d"]) for t in tokens[:4]]
+    assert counts == [1, 0, 0, 1]

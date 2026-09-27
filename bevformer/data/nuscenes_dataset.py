@@ -216,9 +216,16 @@ class BevFormerNuScenesDataset(Dataset):
             detection_class = category_to_detection_class(category_name)
             if detection_class is None:
                 continue
+            # Official use_valid_flag: drop objects no lidar or radar return hit.
+            if annotation["num_lidar_pts"] + annotation["num_radar_pts"] <= 0:
+                continue
 
             center_global = np.array([*annotation["translation"], 1.0], dtype=np.float32)
             center_ref = global2ref_lidar @ center_global
+            # Official ObjectRangeFilter: BEV center strictly inside pc_range x/y.
+            x_min, y_min, _, x_max, y_max, _ = self.pc_range
+            if not (x_min < center_ref[0] < x_max and y_min < center_ref[1] < y_max):
+                continue
 
             box_rotation_global = pose_to_matrix(annotation["rotation"], (0.0, 0.0, 0.0))[:3, :3]
             box_rotation_ref = global2ref_lidar[:3, :3] @ box_rotation_global
