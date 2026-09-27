@@ -97,6 +97,7 @@ class BevFormerNuScenesDataset(Dataset):
         self.categories = _index_by(_load_table(self.meta_root, "category"))
 
         sample_annotations = _load_table(self.meta_root, "sample_annotation")
+        self.annotations = _index_by(sample_annotations)
         self.annotations_by_sample: dict[str, list[dict]] = {}
         for annotation in sample_annotations:
             self.annotations_by_sample.setdefault(annotation["sample_token"], []).append(annotation)
@@ -189,6 +190,22 @@ class BevFormerNuScenesDataset(Dataset):
             "gt_labels_3d": labels,
         }
 
+    def _global_velocity(self, annotation: dict, max_time_diff: float = 1.5) -> np.ndarray | None:
+        """nuscenes-devkit's box_velocity: central difference over the instance's
+        previous/next annotations (one-sided at track ends), None if the track has
+        no neighbor or the neighbors are too far apart in time."""
+        has_prev, has_next = bool(annotation["prev"]), bool(annotation["next"])
+        if not has_prev and not has_next:
+            return None
+        first = self.annotations[annotation["prev"]] if has_prev else annotation
+        last = self.annotations[annotation["next"]] if has_next else annotation
+        time_diff = 1e-6 * (
+            self.samples[last["sample_token"]]["timestamp"] - self.samples[first["sample_token"]]["timestamp"]
+        )
+        if time_diff <= 0 or time_diff > (2 * max_time_diff if has_prev and has_next else max_time_diff):
+            return None
+        return (np.asarray(last["translation"]) - np.asarray(first["translation"])) / time_diff
+
     def _load_boxes(self, sample_token: str, ref_lidar2global: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
         global2ref_lidar = invert_se3(ref_lidar2global)
         boxes = []
@@ -208,9 +225,12 @@ class BevFormerNuScenesDataset(Dataset):
             yaw_ref = yaw_from_rotation_matrix(box_rotation_ref)
 
             width, length, height = annotation["size"]
-            # Velocity is left as zero in Phase 1; computing it requires walking
-            # each instance's sample_annotation track history, deferred to a
-            # later phase that consumes it (loss/eval).
+            # Official (mmdet3d converter): the global xy velocity rotated into the
+            # LIDAR_TOP axes; undefined velocities become 0.
+            velocity_ref = np.zeros(2)
+            velocity_global = self._global_velocity(annotation)
+            if velocity_global is not None:
+                velocity_ref = (global2ref_lidar[:3, :3] @ np.array([velocity_global[0], velocity_global[1], 0.0]))[:2]
             boxes.append(
                 [
                     center_ref[0],
@@ -220,8 +240,8 @@ class BevFormerNuScenesDataset(Dataset):
                     length,
                     height,
                     yaw_ref,
-                    0.0,
-                    0.0,
+                    velocity_ref[0],
+                    velocity_ref[1],
                 ]
             )
             labels.append(CLASS_TO_ID[detection_class])

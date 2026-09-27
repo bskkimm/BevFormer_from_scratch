@@ -177,13 +177,14 @@ def build_synthetic_nuscenes(
                     "token": f"ann_{sample_token}",
                     "sample_token": sample_token,
                     "instance_token": "instance_car_0",
-                    "translation": [ego_translation[0] + 10.0, 5.0, 1.0],
+                    # Moves with the ego (1 m per 0.5 s along its heading -> 2 m/s).
+                    "translation": [ego_translation[0] + 10.0, ego_translation[1] + 5.0, 1.0],
                     "size": [2.0, 4.5, 1.6],
                     "rotation": IDENTITY_ROTATION,
                     "num_lidar_pts": 10,
                     "num_radar_pts": 0,
-                    "prev": "",
-                    "next": "",
+                    "prev": f"ann_{prev_token}" if prev_token else "",
+                    "next": f"ann_{next_token}" if next_token else "",
                 }
             )
 

@@ -169,3 +169,23 @@ def test_can_bus_translation_delta_is_in_the_previous_bev_frame(tmp_path):
     sample = dataset[dataset.sample_tokens.index(info["scene_a_sample_tokens"][-1])]
     for i in range(1, 4):
         np.testing.assert_allclose(sample["can_bus"][i, 16:18].numpy(), [1.0, 0.0], atol=1e-5)
+
+
+@pytest.mark.parametrize("ego_yaw", [0.0, math.pi / 2])
+def test_gt_velocity_is_the_tracked_speed_in_bev_axes(tmp_path, ego_yaw):
+    # The annotated car moves 1 m per 0.5 s along the ego heading: 2 m/s globally
+    # along (cos, sin)(yaw), i.e. +x (2, 0) in the BEV/LIDAR_TOP axes for any yaw.
+    info = build_synthetic_nuscenes(tmp_path, ego_yaw=ego_yaw)
+    dataset = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=1, image_size=(8, 16))
+    for token in info["scene_a_sample_tokens"]:  # includes both track ends (one-sided difference)
+        boxes = dataset[dataset.sample_tokens.index(token)]["gt_boxes_3d"]
+        np.testing.assert_allclose(boxes[0, 7:9].numpy(), [2.0, 0.0], atol=1e-4)
+
+
+def test_gt_velocity_is_zero_without_track_neighbors(tmp_path):
+    info = build_synthetic_nuscenes(tmp_path)
+    dataset = BevFormerNuScenesDataset(info["dataroot"], info["version"], queue_length=1, image_size=(8, 16))
+    for annotation in dataset.annotations_by_sample[info["scene_b_sample_tokens"][0]]:
+        annotation["prev"] = annotation["next"] = ""  # isolate: no track to difference over
+    boxes = dataset[dataset.sample_tokens.index(info["scene_b_sample_tokens"][0])]["gt_boxes_3d"]
+    np.testing.assert_allclose(boxes[0, 7:9].numpy(), [0.0, 0.0])
