@@ -60,7 +60,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--log-every-updates", type=int, default=10, help="MLflow step-metric interval")
     parser.add_argument("--vis-every-epochs", type=int, default=2, help="0 disables BEV visualization")
     parser.add_argument("--vis-split", default="val", help="split of the fixed visualization sample")
-    parser.add_argument("--vis-sample-index", type=int, default=20)
+    parser.add_argument(
+        "--vis-sample-indices", "--vis-sample-index", dest="vis_sample_indices", type=int, nargs="+",
+        default=[20, 4020, 5999],
+        help="fixed visualization samples, one figure row each (val defaults: parking lot, rainy intersection, night traffic)",
+    )
     parser.add_argument("--mlflow", action="store_true")
     parser.add_argument("--mlflow-tracking-uri", default="sqlite:///mlflow.db")
     parser.add_argument("--mlflow-experiment", default="bevformer-training")
@@ -110,7 +114,7 @@ def log_mlflow_artifact(mlflow_module, path: str | Path, artifact_path: str | No
         mlflow_module.log_artifact(str(path), artifact_path=artifact_path)
 
 
-def _visualization_batch(args: argparse.Namespace) -> dict | None:
+def _visualization_batches(args: argparse.Namespace) -> list[dict] | None:
     if args.vis_every_epochs <= 0:
         return None
     dataset = BevFormerNuScenesDataset(
@@ -122,7 +126,7 @@ def _visualization_batch(args: argparse.Namespace) -> dict | None:
         image_dtype=args.image_dtype,
         split=args.vis_split,
     )
-    return collate_fn([dataset[min(args.vis_sample_index, len(dataset) - 1)]])
+    return [collate_fn([dataset[min(index, len(dataset) - 1)]]) for index in args.vis_sample_indices]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -133,7 +137,7 @@ def main(argv: list[str] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     dataloader = build_dataloader(args)
-    vis_batch = _visualization_batch(args)
+    vis_batches = _visualization_batches(args)
     model = prepare_model(build_model(args), args, device)
     criterion = BEVFormerLoss(num_classes=args.num_classes, pc_range=PC_RANGE)
     optimizer = build_optimizer(
@@ -161,8 +165,9 @@ def main(argv: list[str] | None = None) -> None:
 
     def visualize(epoch: int) -> None:
         path = visualize_model_bev(
-            model, vis_batch, device, amp_dtype, PC_RANGE,
+            model, vis_batches, device, amp_dtype, PC_RANGE,
             output_dir / "bev_features" / f"epoch_{epoch:02d}.png", title=f"epoch {epoch}",
+            names=[f"({args.vis_split} #{index})" for index in args.vis_sample_indices],
         )
         log_mlflow_artifact(mlflow_run, path, artifact_path="bev_features")
 
@@ -193,11 +198,11 @@ def main(argv: list[str] | None = None) -> None:
         weights = save_checkpoint(output_dir / "checkpoints" / f"epoch_{epoch:02d}.pth", model, **state)
         if args.mlflow_log_checkpoints:
             log_mlflow_artifact(mlflow_run, weights, artifact_path="checkpoints")
-        if vis_batch is not None and epoch % args.vis_every_epochs == 0:
+        if vis_batches is not None and epoch % args.vis_every_epochs == 0:
             visualize(epoch)
 
     try:
-        if vis_batch is not None and start_epoch == 0:
+        if vis_batches is not None and start_epoch == 0:
             visualize(0)
         fit(
             model,
