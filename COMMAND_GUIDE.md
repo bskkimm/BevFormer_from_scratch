@@ -64,6 +64,13 @@ python train.py --mlflow --output-dir runs/bevformer-r101dcn-bev100 \
   --resume runs/bevformer-r101dcn-bev100/checkpoints/latest.pth
 ```
 
+Resuming restores the weights, optimizer, learning-rate position and MLflow run id.
+An interrupted epoch is trained again from its start, so MLflow ends up with two logged
+versions of those steps (`plot_training_curves.py` keeps the newest). Pass the same
+`--dataroot` spelling when resuming (quote `'~/dataset/nuscenes'` so the shell does not
+expand it): `train.py` rewrites `config.json`, and the validation watcher compares it with
+its cache.
+
 Smoke-test the whole pipeline first with `--subset 64 --epochs 2 --vis-every-epochs 1`
 (about 3 minutes).
 
@@ -95,8 +102,10 @@ cache (first epoch) measured the same: 0.516 s/step, loader 23.6 samples/s.
 
 Current default model (100x100 BEV, 6 encoder layers, 8 spatial-cross-attention
 points per camera and level as in official BEVFormer, compiled backbone, fused
-AdamW): **0.830 s/sample, ~6.5 h per train-split epoch, ~6.5 days for 24 epochs**
-(0.742 s with the earlier 4-point spatial cross-attention). The table above was measured on the earlier 50x50 / 3-layer default.
+AdamW), measured over a complete 24-epoch run with the validation watcher sharing
+the GPU: **0.89 s/sample, 6.9 h per train-split epoch, 166 h (about 6.9 days) of
+training in total**. The table above was measured earlier on a 50x50 / 3-layer
+default.
 
 **Bottleneck: GPU-bound.** The loader delivers ~10x what the GPU consumes, so the
 end-to-end step is within 3% of the GPU-only step.
@@ -167,3 +176,91 @@ What a training run logs:
 
 `--resume` continues the checkpoint's MLflow run automatically; use
 `--mlflow-log-checkpoints` to also upload per-epoch weights as artifacts.
+
+### Validation loss alongside a running training job
+
+`bevformer/scripts/watch_validation.py` evaluates saved `epoch_*.pth` checkpoints
+without restarting training. It logs `val/subset_loss` and loss components to the
+existing MLflow run at the checkpoint's epoch number. Choose **Step** as the chart's
+horizontal axis. This is a fixed subset estimate, not full-validation loss or official
+nuScenes metrics.
+
+Prepare the compact validation cache once, while training is stopped, then start the
+watcher (the MLflow run id is stored in `checkpoints/latest.pth` and shown on the
+run's page):
+
+```bash
+python bevformer/scripts/watch_validation.py --prepare-cache \
+  --run-dir runs/<name> --run-id <mlflow run id>
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -u bevformer/scripts/watch_validation.py \
+  --run-dir runs/<name> --run-id <mlflow run id> --samples 128
+```
+
+The cache is about 18 MiB; evaluations load it directly without loading the full raw
+nuScenes tables. Rebuild it with training stopped if the dataset code or the subset
+settings change. The watcher waits while available system RAM is below 8 GiB
+(`--min-free-ram-gib`).
+
+Running training and the watcher as systemd user services keeps their memory budgets
+apart. Capping the watcher means it can never take memory away from training:
+
+```bash
+systemd-run --user --unit=<name>-validation \
+  --property=MemoryMax=6G --property=MemorySwapMax=0 --property=OOMPolicy=kill \
+  --property=Restart=on-failure --property=RestartSec=60 \
+  --property=StandardOutput=append:$PWD/runs/<name>/validation.log \
+  --property=StandardError=append:$PWD/runs/<name>/validation.log \
+  --working-directory=$PWD --setenv=OMP_NUM_THREADS=2 --setenv=OPENBLAS_NUM_THREADS=2 \
+  $PWD/.venv/bin/python -u bevformer/scripts/watch_validation.py \
+  --run-dir runs/<name> --run-id <mlflow run id>
+```
+
+Check it with `systemctl --user status <name>-validation`; stop validation and its
+evaluator child with `systemctl --user stop <name>-validation`.
+
+The watcher checks every 60 seconds, evaluates the newest pending checkpoint first,
+then fills older epochs. It uses the same seeded, scene-spread validation samples for
+every checkpoint, batch size 1, no data-loader worker processes, the training image
+size and temporal queue, and the training mixed-precision setting. GPU memory is capped
+at 25% of the device by default (`--memory-fraction`); each evaluation process exits to
+release memory. Training still shares GPU compute during evaluation. `val/duration_s`
+records evaluation time including setup.
+
+Only complete checkpoint filenames are consumed (training saves atomically). The
+watcher holds a directory lock and skips epochs already in MLflow, making restarts
+safe. Changing subset settings for the same metric series is rejected. It exits after
+training ends and all saved epochs have been evaluated. Stop the watcher independently
+of training using its PID in `<run-dir>/validation.lock`; if stopping during an
+evaluation, also stop its evaluator child process.
+
+### Training curves
+
+```bash
+python bevformer/scripts/plot_training_curves.py --run-id <mlflow run id> \
+  --out docs/assets/training_curves.png
+```
+
+Draws the per-update training loss and the per-epoch train versus validation loss. Where a
+resumed run logged a step twice, the newest entry is used.
+
+## Demo Videos
+
+```bash
+python bevformer/scripts/make_demo_videos.py --run-dir runs/<name>                 # final.pth, every map, 2 min each
+python bevformer/scripts/make_demo_videos.py --run-dir runs/<name> \
+  --checkpoint checkpoints/epoch_14.pth --maps boston-seaport --seconds 30       # a quick look at one epoch
+```
+
+Needs `ffmpeg`. Each video chains validation scenes of one nuScenes map. Every frame
+shows the front camera with the predicted 3D boxes projected onto it, next to the BEV
+feature-distinctiveness map with ground-truth (green) and predicted (orange) boxes.
+nuScenes keyframes are 2 Hz, so playback is real time at 2 fps and 240 frames make two
+minutes. All four maps take about 12 minutes on the benchmark GPU. Output goes to
+`runs/<name>/videos/` (MP4s, `manifest.json`, `index.html`).
+
+To watch them from another machine, serve the folder and tunnel the port over SSH:
+
+```bash
+python -m http.server 8765 --bind 127.0.0.1 --directory runs/<name>/videos
+ssh -N -L 8765:127.0.0.1:8765 <training-host>      # on your PC, then open http://localhost:8765
+```
