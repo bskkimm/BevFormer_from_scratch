@@ -9,7 +9,7 @@ which bugs had to be fixed on the way, and what the numbers do and do not show.
 |---|---|
 | Model | ResNet-101 + DCNv2, FPN, 100x100 BEV, 6 encoder / 6 decoder layers, 900 queries (61.0 M parameters) |
 | Data | official nuScenes train split: 700 scenes, 28,130 samples, 24 epochs |
-| Hardware | one NVIDIA RTX PRO 6000 Blackwell Max-Q (96 GB), 32 CPUs, local NVMe |
+| Hardware | a single GPU |
 | Training time | 166 h (6.9 days) of pure training, 6.9 h per epoch, 0.89 s per sample |
 | Wall clock | 27 Sep 22:53 to 6 Oct 18:26 (JST): 8.8 days including four unplanned interruptions and one planned pause |
 | Train loss | 10.66 (epoch 1) to 3.32 (epoch 24) |

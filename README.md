@@ -19,7 +19,7 @@ BEV grid:
 |---|---|
 | Train loss (epoch mean) | 10.66 to **3.32** |
 | Validation loss (128 fixed val samples) | 8.74 to 6.82 (lowest 6.62 at epoch 14) |
-| Training time | 166 h on one RTX PRO 6000 (96 GB), 6.9 h per epoch |
+| Training time | 166 h on a single GPU, 6.9 h per epoch |
 | Official nuScenes mAP / NDS | **not evaluated yet** |
 
 ![Training curves](docs/assets/training_curves.png)

@@ -85,8 +85,9 @@ python bevformer/scripts/benchmark_throughput.py --mode e2e      # real loader +
 ```
 
 Training is **data-bound** if `loader` samples/s < `step` samples/s, otherwise
-**GPU-bound**. Measured on an RTX PRO 6000 (96 GB), 32 CPUs, local NVMe, with the
-default model (ResNet-101 + DCNv2, 1600x900, 4-frame queue, 6 cameras, batch 1):
+**GPU-bound**. Measured on a single GPU with the default model (ResNet-101 + DCNv2,
+1600x900, 4-frame queue, 6 cameras, batch 1). Absolute numbers depend on the GPU, the CPU
+count and the disk; the ratios between settings are what carry over:
 
 | | Previous defaults | Current defaults | Gain |
 |---|---:|---:|---:|

@@ -75,8 +75,7 @@ def add_data_args(parser: argparse.ArgumentParser, default_split: str = "train")
     parser.add_argument("--image-width", type=int, default=1600)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--subset", type=int, default=None, help="use only the first N samples (smoke tests)")
-    # Throughput defaults below are the measured-best setup on a 32-CPU / RTX PRO 6000
-    # machine (see COMMAND_GUIDE.md "Training throughput").
+    # Throughput defaults below are the measured-best setup (see COMMAND_GUIDE.md "Training throughput").
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument(
         "--image-dtype", default="uint8", choices=["float32", "uint8"],
